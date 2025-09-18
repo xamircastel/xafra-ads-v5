@@ -1,0 +1,185 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Customer model - EXACTLY matches existing "customers" table
+model Customer {
+  id_customer BigInt  @id @default(autoincrement())
+  name        String? @db.VarChar(1000)
+  short_name  String? @db.VarChar(100)
+  mail        String? @db.VarChar(200)
+  phone       String? @db.VarChar(20)
+  country     String? @db.VarChar(10)
+  operator    String? @db.VarChar(50)
+
+  // Relations
+  products  Product[]
+  authUsers AuthUser[]
+
+  @@map("customers")
+}
+
+// Auth users - Enhanced model for full Auth Service functionality
+model AuthUser {
+  id_auth         BigInt    @id @default(autoincrement())
+  user_name       String?   @db.VarChar(50)
+  shared_key      String?   @db.VarChar(50)
+  api_key         String?   @db.VarChar(50)
+  active          Int?      @db.SmallInt
+  creation_date   DateTime? @default(now())
+  
+  // Additional fields for Auth Service functionality
+  customer_id     BigInt?   // Reference to customer
+  password        String?   @db.VarChar(255) // Hashed password
+  status          Int?      @db.SmallInt @default(1) // 0=inactive, 1=active, 2=suspended
+  expiration_date BigInt?   // Timestamp for API key expiration
+  description     String?   @db.VarChar(500) // Description of API key usage
+  permissions     String?   @db.VarChar(1000) // JSON string with permissions
+  login_count     Int?      @default(0) // Number of times logged in
+  last_login      BigInt?   // Last login timestamp
+  modification_date DateTime? @default(now()) // Last modification timestamp
+
+  // Relations
+  customer        Customer? @relation(fields: [customer_id], references: [id_customer])
+
+  @@map("auth_users")
+}
+
+// Product model - EXACTLY matches existing "products" table
+model Product {
+  id_product            BigInt  @id @default(autoincrement())
+  reference             String? @db.VarChar(100)
+  name                  String? @db.VarChar(500)
+  url_redirect_success  String? @db.VarChar(1000)
+  active                Int?    @db.SmallInt
+  id_customer           BigInt?
+  url_redirect_postback String? @db.VarChar(1000)
+  method_postback       String? @db.VarChar(20)
+  body_postback         String? @db.VarChar(2500)
+  is_qs                 Int?    @db.SmallInt
+  country               String? @db.VarChar(10)
+  operator              String? @db.VarChar(50)
+  random                Int?    @db.SmallInt
+
+  // Relations
+  customer  Customer? @relation(fields: [id_customer], references: [id_customer], onDelete: Cascade)
+  campaigns Campaign[]
+
+  @@map("products")
+}
+
+// Campaign model - EXACTLY matches existing "campaign" table
+model Campaign {
+  id                    BigInt    @id @default(autoincrement())
+  creation_date         DateTime? @default(now())
+  modification_date     DateTime?
+  id_product            BigInt?
+  tracking              String?   @db.VarChar(500)
+  status                Int?      @db.SmallInt
+  uuid                  String?   @db.VarChar(50)
+  status_post_back      Int?      @db.SmallInt
+  date_post_back        DateTime?
+  params                String?   @db.Text
+  xafra_tracking_id     String?   @db.VarChar(100)
+  short_tracking        String?   @db.VarChar(50)
+  country               String?   @db.VarChar(50)
+  operator              String?   @db.VarChar(50)
+
+  // Relations
+  product Product? @relation(fields: [id_product], references: [id_product], onDelete: Cascade)
+
+  @@index([tracking])
+  @@index([short_tracking])
+  @@index([xafra_tracking_id])
+  @@index([status])
+  @@index([creation_date])
+  @@index([id_product, status])
+  @@index([country, operator])
+  @@map("campaign")
+}
+
+// Ads model - EXACTLY matches existing "ads" table
+model Ads {
+  ads_id      BigInt @id @default(autoincrement())
+  ads_conf_id BigInt
+  ads_def_id  BigInt
+  priority    Int?   @db.SmallInt
+  status      Int?   @db.SmallInt
+  cdate       DateTime? @default(now())
+
+  // Relations
+  ads_def  AdsDefinition? @relation(fields: [ads_def_id], references: [ads_def_id])
+  ads_conf AdsConfiguration? @relation(fields: [ads_conf_id], references: [ads_conf_id])
+
+  @@index([priority])
+  @@index([status])
+  @@map("ads")
+}
+
+// Ads Configuration model - EXACTLY matches existing "ads_conf" table
+model AdsConfiguration {
+  ads_conf_id BigInt    @id @default(autoincrement())
+  name        String?   @db.VarChar(100)
+  status      Int?      @db.SmallInt
+  cdate       DateTime? @default(now())
+
+  // Relations
+  ads Ads[]
+
+  @@map("ads_conf")
+}
+
+// Ads Definition model - EXACTLY matches existing "ads_def" table
+model AdsDefinition {
+  ads_def_id   BigInt    @id @default(autoincrement())
+  ads_conf_id  BigInt
+  product_id   BigInt
+  use_tracking Int?      @db.SmallInt
+  status       Int?      @db.SmallInt
+  cdate        DateTime? @default(now())
+
+  // Relations
+  ads Ads[]
+
+  @@map("ads_def")
+}
+
+// Blacklist model - EXACTLY matches existing "blacklist" table
+model Blacklist {
+  id            BigInt    @id @default(autoincrement())
+  msisdn        String?   @db.VarChar(20)
+  creation_date DateTime?
+  product_id    BigInt?
+  type          Int?      @db.SmallInt
+
+  @@index([msisdn])
+  @@index([product_id])
+  @@index([type])
+  @@map("blacklist")
+}
+
+// Xafra Campaign model - EXACTLY matches existing "xafra_campaign" table
+model XafraCampaign {
+  id         BigInt    @id @default(autoincrement())
+  xafra_id   BigInt
+  product_id BigInt?
+  tracking   String    @db.VarChar(50)
+  status     Int?      @db.SmallInt
+  uuid       String?   @db.VarChar(50)
+  cdate      DateTime? @default(now())
+  mdate      DateTime?
+
+  @@index([status])
+  @@index([tracking])
+  @@map("xafra_campaign")
+}
+
+// NOTE: vw_ads is a VIEW, not a table - handled separately in queries

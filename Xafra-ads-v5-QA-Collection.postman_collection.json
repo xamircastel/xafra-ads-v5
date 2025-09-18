@@ -1,0 +1,703 @@
+{
+  "info": {
+    "name": "Xafra-ads v5 - API Testing Collection",
+    "description": "Comprehensive API testing collection for Xafra-ads v5 backend services",
+    "version": "5.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "W9M178xiTRCg8VtBgcdyzULpbeOPGFyV",
+      "type": "string",
+      "description": "API Key de COCOMOBILE (extraído de BD real)"
+    },
+    {
+      "key": "customerId",
+      "value": "2",
+      "type": "string",
+      "description": "ID de COCOMOBILE customer"
+    },
+    {
+      "key": "productId",
+      "value": "2",
+      "type": "string",
+      "description": "ID de producto Play on Games"
+    },
+    {
+      "key": "trackingId",
+      "value": "",
+      "type": "string",
+      "description": "Tracking ID generado dinámicamente"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔧 CORE SERVICE - Health & System",
+      "description": "Endpoints básicos del sistema y salud",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "System Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "System Metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🎯 TRACKING SERVICE - Campaign Tracking",
+      "description": "Endpoints para tracking de campañas y redirecciones",
+      "item": [
+        {
+          "name": "Create Campaign Tracking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.tracking_id || response.trackingId) {",
+                  "        pm.collectionVariables.set('trackingId', response.tracking_id || response.trackingId);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_id\": {{productId}},\n  \"country\": \"PE\",\n  \"operator\": \"entel\",\n  \"user_agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\",\n  \"ip_address\": \"192.168.1.100\",\n  \"params\": {\n    \"source\": \"facebook\",\n    \"campaign\": \"test_qa\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "create"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Redirect Campaign",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/r/{{trackingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["r", "{{trackingId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Redirect with Short Tracking (Kolbi)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/s/KLB123",
+              "host": ["{{baseUrl}}"],
+              "path": ["s", "KLB123"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Campaign Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": 1,\n  \"conversion_data\": {\n    \"value\": 10.50,\n    \"currency\": \"USD\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/{{trackingId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "{{trackingId}}", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Campaign Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/{{trackingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "{{trackingId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🔐 AUTH SERVICE - Authentication",
+      "description": "Endpoints de autenticación y manejo de API keys",
+      "item": [
+        {
+          "name": "Validate API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"api_key\": \"{{apiKey}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "validate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get API Key Info",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/info",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "info"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_data\": {\n    \"ip\": \"192.168.1.100\",\n    \"user_agent\": \"Postman/QA\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/session",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "session"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📊 CAMPAIGN SERVICE - Campaign Management",
+      "description": "Endpoints para gestión de campañas",
+      "item": [
+        {
+          "name": "Get Customer Campaigns",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns?customer_id={{customerId}}&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns"],
+              "query": [
+                {
+                  "key": "customer_id",
+                  "value": "{{customerId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Campaign Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/{{productId}}/stats?start_date=2024-01-01&end_date=2024-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "{{productId}}", "stats"],
+              "query": [
+                {
+                  "key": "start_date",
+                  "value": "2024-01-01"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2024-12-31"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversion Reports",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/reports/conversions?product_id={{productId}}&period=7d",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "reports", "conversions"],
+              "query": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}"
+                },
+                {
+                  "key": "period",
+                  "value": "7d"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Campaign Configuration",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Campaign Name\",\n  \"country\": \"PE\",\n  \"operator\": \"entel\",\n  \"random_distribution\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/campaigns/products/{{productId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "campaigns", "products", "{{productId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📮 POSTBACK SERVICE - Webhook Management",
+      "description": "Endpoints para gestión de postbacks y webhooks",
+      "item": [
+        {
+          "name": "Send Postback Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tracking_id\": \"{{trackingId}}\",\n  \"conversion_value\": 15.99,\n  \"currency\": \"USD\",\n  \"event_type\": \"conversion\",\n  \"additional_data\": {\n    \"source\": \"qa_test\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/postback/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "postback", "send"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Postback History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/postback/history?campaign_id={{trackingId}}&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "postback", "history"],
+              "query": [
+                {
+                  "key": "campaign_id",
+                  "value": "{{trackingId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Retry Failed Postbacks",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"campaign_id\": \"{{trackingId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/postback/retry",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "postback", "retry"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Webhook URL",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"webhook_url\": \"https://webhook.site/test\",\n  \"test_data\": {\n    \"tracking_id\": \"test_123\",\n    \"value\": 10.00\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/postback/test",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "postback", "test"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🛡️ SECURITY & UTILITIES",
+      "description": "Endpoints de seguridad y utilidades del sistema",
+      "item": [
+        {
+          "name": "Encrypt Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"data\": \"sensitive_product_id_123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/util/encrypt",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "util", "encrypt"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Decrypt Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"encrypted_data\": \"encrypted_string_here\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/util/decrypt",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "util", "decrypt"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Short Tracking (Kolbi)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tracking_id\": \"{{trackingId}}\",\n  \"country\": \"CR\",\n  \"operator\": \"kolbi\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/util/short-tracking",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "util", "short-tracking"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Check Rate Limits",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/util/rate-limit-status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "util", "rate-limit-status"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📈 ANALYTICS & REPORTS",
+      "description": "Endpoints de análisis y reportes",
+      "item": [
+        {
+          "name": "Get Customer Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analytics/customer/{{customerId}}?period=30d&country=PE",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "analytics", "customer", "{{customerId}}"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "30d"
+                },
+                {
+                  "key": "country",
+                  "value": "PE"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product Performance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analytics/product/{{productId}}/performance?start_date=2024-01-01&end_date=2024-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "analytics", "product", "{{productId}}", "performance"],
+              "query": [
+                {
+                  "key": "start_date",
+                  "value": "2024-01-01"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2024-12-31"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Traffic Distribution",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-api-key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analytics/traffic/distribution?product_id={{productId}}&group_by=country",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "analytics", "traffic", "distribution"],
+              "query": [
+                {
+                  "key": "product_id",
+                  "value": "{{productId}}"
+                },
+                {
+                  "key": "group_by",
+                  "value": "country"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

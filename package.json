@@ -1,0 +1,50 @@
+{
+  "name": "xafra-ads-v5",
+  "version": "5.0.0",
+  "description": "Modern advertising backend application with microservices architecture",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=core-service\" \"npm run dev --workspace=tracking-service\" \"npm run dev --workspace=auth-service\" \"npm run dev --workspace=campaign-service\" \"npm run dev --workspace=@xafra/postback-service\"",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "typecheck": "npm run typecheck --workspaces",
+    "clean": "npm run clean --workspaces && rm -rf node_modules",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "db:generate": "npm run db:generate --workspace=@xafra/database",
+    "db:migrate": "npm run db:migrate --workspace=@xafra/database",
+    "db:studio": "npm run db:studio --workspace=@xafra/database"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xamircastel/xafra-ads-v5.git"
+  },
+  "author": "Xafra Team",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "pg": "^8.16.3"
+  }
+}

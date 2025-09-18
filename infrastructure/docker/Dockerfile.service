@@ -1,0 +1,55 @@
+# Multi-stage Dockerfile for Node.js microservices
+ARG NODE_VERSION=20-alpine
+
+# Base stage with common dependencies
+FROM node:${NODE_VERSION} AS base
+WORKDIR /app
+
+# Install dependencies for building
+RUN apk add --no-cache curl && \
+    npm install -g npm@latest
+
+# Copy package files
+COPY package*.json tsconfig*.json ./
+COPY packages/ ./packages/
+
+# Dependencies stage
+FROM base AS dependencies
+RUN npm ci --only=production && \
+    cp -R node_modules production_node_modules && \
+    npm ci
+
+# Build stage
+FROM dependencies AS build
+ARG SERVICE_NAME
+COPY services/${SERVICE_NAME}/ ./services/${SERVICE_NAME}/
+RUN npm run build --workspace=${SERVICE_NAME}
+
+# Production stage
+FROM node:${NODE_VERSION} AS production
+WORKDIR /app
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+# Copy production dependencies
+COPY --from=dependencies --chown=nextjs:nodejs /app/production_node_modules ./node_modules
+
+# Copy built application
+ARG SERVICE_NAME
+COPY --from=build --chown=nextjs:nodejs /app/services/${SERVICE_NAME}/dist ./dist
+COPY --from=build --chown=nextjs:nodejs /app/packages/*/dist ./packages/
+
+# Copy package.json for service
+COPY --chown=nextjs:nodejs services/${SERVICE_NAME}/package.json ./package.json
+
+USER nextjs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-3000}/health || exit 1
+
+EXPOSE ${PORT:-3000}
+
+CMD ["node", "dist/index.js"]

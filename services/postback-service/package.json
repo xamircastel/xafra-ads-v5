@@ -1,0 +1,46 @@
+{
+  "name": "@xafra/postback-service",
+  "version": "1.0.0",
+  "description": "Postback Service - Webhook notifications and delivery tracking for Xafra Ads v5",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "watch": "nodemon --exec ts-node src/index.ts",
+    "clean": "rimraf dist"
+  },
+  "keywords": [
+    "postback",
+    "webhook",
+    "notifications",
+    "advertising",
+    "microservice"
+  ],
+  "author": "Xafra Development Team",
+  "license": "PROPRIETARY",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^17.2.2",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "tsx": "^4.20.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "@types/node-cron": "^3.0.11",
+    "nodemon": "^3.0.0",
+    "rimraf": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xafra/xafra-ads-v5.git",
+    "directory": "services/postback-service"
+  }
+}
