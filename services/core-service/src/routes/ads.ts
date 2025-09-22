@@ -22,7 +22,10 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
     });
 
     // Call our decrypt endpoint
-    const decryptResponse = await fetch('http://localhost:8080/api/util/decrypt', {
+    const baseUrl = process.env.NODE_ENV === 'staging' 
+      ? 'https://core-service-stg-shk2qzic2q-uc.a.run.app'
+      : 'http://localhost:8080';
+    const decryptResponse = await fetch(`${baseUrl}/api/util/decrypt`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -274,7 +277,10 @@ router.get("/tr/:encryptedId", async (req: Request, res: Response) => {
     });
 
     // Call our decrypt endpoint
-    const decryptResponse = await fetch('http://localhost:8080/api/util/decrypt', {
+    const baseUrl = process.env.NODE_ENV === 'staging' 
+      ? 'https://core-service-stg-shk2qzic2q-uc.a.run.app'
+      : 'http://localhost:8080';
+    const decryptResponse = await fetch(`${baseUrl}/api/util/decrypt`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -388,7 +394,10 @@ router.get("/:encryptedId", async (req: Request, res: Response) => {
     });
 
     // Call our decrypt endpoint
-    const decryptResponse = await fetch('http://localhost:8080/api/util/decrypt', {
+    const baseUrl = process.env.NODE_ENV === 'staging' 
+      ? 'https://core-service-stg-shk2qzic2q-uc.a.run.app'
+      : 'http://localhost:8080';
+    const decryptResponse = await fetch(`${baseUrl}/api/util/decrypt`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',

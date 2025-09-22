@@ -30,7 +30,7 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // Get current configuration for a tracking ID
-router.get('/tracking/:originalTracking', authenticate, async (req: Request, res: Response) => {
+router.get('/tracking/:originalTracking', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const { originalTracking } = req.params;
     const apikey = req.headers['x-api-key'] as string;
