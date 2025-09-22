@@ -24,7 +24,10 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
     // Call our decrypt endpoint
     const decryptResponse = await fetch('http://localhost:8080/api/util/decrypt', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-api-key': 'xafra_mfs9yf3g_e8c39158306ce0759b573cf36c56218b'
+      },
       body: JSON.stringify({ encrypted_id: encryptedId })
     });
 
@@ -273,7 +276,10 @@ router.get("/tr/:encryptedId", async (req: Request, res: Response) => {
     // Call our decrypt endpoint
     const decryptResponse = await fetch('http://localhost:8080/api/util/decrypt', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-api-key': 'xafra_mfs9yf3g_e8c39158306ce0759b573cf36c56218b'
+      },
       body: JSON.stringify({ encrypted_id: encryptedId })
     });
 
@@ -384,7 +390,10 @@ router.get("/:encryptedId", async (req: Request, res: Response) => {
     // Call our decrypt endpoint
     const decryptResponse = await fetch('http://localhost:8080/api/util/decrypt', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-api-key': 'xafra_mfs9yf3g_e8c39158306ce0759b573cf36c56218b'
+      },
       body: JSON.stringify({ encrypted_id: encryptedId }) // ✅ Campo correcto
     });
 

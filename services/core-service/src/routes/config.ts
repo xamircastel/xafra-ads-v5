@@ -165,7 +165,7 @@ router.post('/xafra', authenticate, async (req: Request, res: Response) => {
             campaignId: Number(campaign.id)
           });
 
-          loggers.tracking('bulk_kolbi_config', original_tracking, campaign.id_product, {
+          loggers.tracking('bulk_kolbi_config', original_tracking, Number(campaign.id_product), {
             shortTracking: short_tracking,
             enabled
           });
@@ -244,7 +244,7 @@ router.post('/xafra', authenticate, async (req: Request, res: Response) => {
         }
       });
 
-      loggers.tracking('kolbi_config', original_tracking, campaign.id_product, {
+      loggers.tracking('kolbi_config', original_tracking, Number(campaign.id_product), {
         shortTracking: short_tracking,
         enabled
       });
