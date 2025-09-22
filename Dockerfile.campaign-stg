@@ -1,0 +1,73 @@
+# Campaign Service Dockerfile - Staging Optimized
+FROM node:20-alpine AS base
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++ openssl-dev
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY packages/shared/package*.json ./packages/shared/
+COPY packages/database/package*.json ./packages/database/
+COPY services/campaign-service/package*.json ./services/campaign-service/
+
+# Install all dependencies
+RUN npm ci --include=dev
+
+# Copy shared packages source
+COPY packages/ ./packages/
+
+# Copy service source
+COPY services/campaign-service/ ./services/campaign-service/
+
+# Copy root configs
+COPY tsconfig.json ./
+COPY environments/staging/.env.staging .env
+
+# Build packages
+RUN npm run build -w @xafra/shared
+RUN npm run build -w @xafra/database
+
+# Generate Prisma client
+RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
+
+# Build service
+WORKDIR /app/services/campaign-service
+
+# Clean dist and build
+RUN rm -rf dist
+RUN echo "Building campaign-service..."
+RUN npx tsc
+
+# Verify build
+RUN echo "Checking dist contents:" && ls -la dist/ && echo "Checking dist structure:" && find dist/ -name "*.js" -type f | head -10
+
+# Production stage
+FROM node:20-alpine AS production
+
+# Install runtime dependencies
+RUN apk add --no-cache openssl
+
+WORKDIR /app
+
+# Copy built application
+COPY --from=base /app/node_modules ./node_modules
+COPY --from=base /app/packages ./packages
+COPY --from=base /app/services/campaign-service/dist ./services/campaign-service/dist
+COPY --from=base /app/services/campaign-service/package*.json ./services/campaign-service/
+
+WORKDIR /app/services/campaign-service
+
+# Set environment
+ENV NODE_ENV=staging
+ENV PORT=8080
+
+EXPOSE 8080
+
+# Health check with reasonable timeout
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/api/v1/health || exit 1
+
+# Find the correct path to index.js and run it
+CMD ["sh", "-c", "find dist -name 'index.js' -type f | head -1 | xargs node"]

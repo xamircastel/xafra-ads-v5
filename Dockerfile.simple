@@ -1,0 +1,39 @@
+FROM node:20-alpine
+
+# Instalar herramientas mínimas
+RUN apk add --no-cache curl bash git
+
+WORKDIR /app
+
+# Copiar archivos de configuración
+COPY package*.json ./
+COPY tsconfig*.json ./
+
+# Copiar packages y servicios
+COPY packages/ ./packages/
+COPY services/core-service/ ./services/core-service/
+
+# Instalar todas las dependencias
+RUN npm ci
+
+# Compilar packages en orden
+RUN npm run build --workspace=@xafra/shared
+RUN npm run build --workspace=@xafra/database
+RUN npm run build --workspace=core-service
+
+# Configuración del servicio
+EXPOSE 8080
+ENV NODE_ENV=staging
+ENV PORT=8080
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Usuario de seguridad
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nextjs -u 1001
+USER nextjs
+
+# Comando de inicio
+CMD ["node", "services/core-service/dist/index.js"]

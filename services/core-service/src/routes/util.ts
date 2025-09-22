@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { logger, loggers } from '@xafra/shared/logger';
-import { prisma } from '@xafra/database';
-import { getCacheService } from '@xafra/shared/cache';
-import { validateRequest } from '@xafra/shared/middleware/auth';
-import { UtilitySchema } from '@xafra/shared/validation';
-import { EncryptionService } from '@xafra/shared/encryption';
+import { logger, loggers } from '../utils/simple-logger';
+import { prisma } from '../utils/simple-database';
+import { getCacheService } from '../utils/simple-cache';
+import { validateRequest } from '../utils/simple-validation';
+import { UtilitySchema } from '../utils/simple-schemas';
+import { EncryptionService } from '../utils/simple-encryption';
 
 const router = Router();
 

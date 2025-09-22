@@ -1,0 +1,89 @@
+📋 Estructura de la tabla products:
+
+prisma:info Starting a postgresql pool with 25 connections.
+prisma:query 
+      SELECT 
+        column_name,
+        data_type,
+        character_maximum_length,
+        is_nullable,
+        column_default
+      FROM information_schema.columns 
+      WHERE table_name = 'products' 
+        AND table_schema = 'public'
+      ORDER BY ordinal_position
+    
+┌─────────┬─────────────────────────┬─────────────────────┬──────────────────────────┬─────────────┬────────────────────────────────────────────────┐
+│ (index) │ column_name             │ data_type           │ character_maximum_length │ is_nullable │ column_default                                 │
+├─────────┼─────────────────────────┼─────────────────────┼──────────────────────────┼─────────────┼────────────────────────────────────────────────┤
+│ 0       │ 'id_product'            │ 'bigint'            │ null                     │ 'NO'        │ "nextval('products_id_product_seq'::regclass)" │
+│ 1       │ 'reference'             │ 'character varying' │ 100                      │ 'YES'       │ null                                           │
+│ 2       │ 'name'                  │ 'character varying' │ 500                      │ 'YES'       │ null                                           │
+│ 3       │ 'url_redirect_success'  │ 'character varying' │ 1000                     │ 'YES'       │ null                                           │
+│ 4       │ 'active'                │ 'smallint'          │ null                     │ 'YES'       │ null                                           │
+│ 5       │ 'id_customer'           │ 'bigint'            │ null                     │ 'YES'       │ null                                           │
+│ 6       │ 'url_redirect_postback' │ 'character varying' │ 1000                     │ 'YES'       │ null                                           │
+│ 7       │ 'method_postback'       │ 'character varying' │ 20                       │ 'YES'       │ null                                           │
+│ 8       │ 'body_postback'         │ 'character varying' │ 2500                     │ 'YES'       │ null                                           │
+│ 9       │ 'is_qs'                 │ 'smallint'          │ null                     │ 'YES'       │ null                                           │
+│ 10      │ 'country'               │ 'character varying' │ 10                       │ 'YES'       │ null                                           │
+│ 11      │ 'operator'              │ 'character varying' │ 50                       │ 'YES'       │ null                                           │
+│ 12      │ 'random'                │ 'smallint'          │ null                     │ 'YES'       │ null                                           │
+└─────────┴─────────────────────────┴─────────────────────┴──────────────────────────┴─────────────┴────────────────────────────────────────────────┘
+
+💡 Ejemplo de INSERT para crear un producto:
+
+-- Producto básico para customer con ID 1
+INSERT INTO products (
+  reference, 
+  name, 
+  url_redirect_success, 
+  active, 
+  id_customer, 
+  url_redirect_postback,
+  method_postback,
+  body_postback,
+  is_qs,
+  country,
+  operator,
+  random
+) VALUES (
+  'PROD_001',
+  'Producto de Prueba Premium',
+  'https://success.example.com/thank-you?user={msisdn}&product={product_id}',
+  1,
+  1,
+  'https://postback.example.com/notify',
+  'POST',
+  '{"msisdn":"{msisdn}","product_id":"{product_id}","status":"success"}',
+  1,
+  'CR',
+  'KOLBI',
+  1
+);
+    
+
+🔍 Products actuales en la BD:
+prisma:query SELECT "public"."products"."id_product", "public"."products"."reference", "public"."products"."name", "public"."products"."url_redirect_success", "public"."products"."active", "public"."products"."id_customer", "public"."products"."url_redirect_postback", "public"."products"."method_postback", "public"."products"."body_postback", "public"."products"."is_qs", "public"."products"."country", "public"."products"."operator", "public"."products"."random" FROM "public"."products" WHERE 1=1 OFFSET $1
+prisma:query SELECT "public"."customers"."id_customer", "public"."customers"."name", "public"."customers"."short_name" FROM "public"."customers" WHERE "public"."customers"."id_customer" IN ($1,$2) OFFSET $3
+┌─────────┬────────────┬───────────┬──────────────────────┬─────────────┬────────┬─────────┬──────────┐
+│ (index) │ id_product │ reference │ name                 │ customer    │ active │ country │ operator │
+├─────────┼────────────┼───────────┼──────────────────────┼─────────────┼────────┼─────────┼──────────┤
+│ 0       │ 1n         │ 'Mind'    │ 'Mind'               │ 'Digital-X' │ 1      │ 'CR'    │ 'KOLBI'  │
+│ 1       │ 2n         │ 'Generic' │ 'Discovery Language' │ 'Gomovil'   │ 1      │ 'CR'    │ 'KOLBI'  │
+└─────────┴────────────┴───────────┴──────────────────────┴─────────────┴────────┴─────────┴──────────┘
+
+📊 Campos importantes:
+• reference: Código único del producto
+• name: Nombre descriptivo
+• url_redirect_success: URL de éxito (acepta placeholders como {msisdn}, {product_id})
+• active: 1 = activo, 0 = inactivo
+• id_customer: ID del customer (debe existir)
+• url_redirect_postback: URL para notificaciones
+• method_postback: GET o POST
+• body_postback: JSON para postback (acepta placeholders)
+• is_qs: 1 = usar query string, 0 = usar body
+• country: Código de país (CR, US, etc.)
+• operator: KOLBI, MOVISTAR, etc.
+• random: 1 = distribución aleatoria, 0 = secuencial
+Database disconnected successfully

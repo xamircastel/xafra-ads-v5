@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { prisma } from '@xafra/database';
-import { loggers } from '@xafra/shared/logger';
+import { prisma } from '../utils/simple-database';
+import { loggers } from '../utils/simple-logger';
 import axios from 'axios';
 
 const router = Router();

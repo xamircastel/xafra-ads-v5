@@ -1,0 +1,26 @@
+🔍 Verificando registros en auth_users...
+
+prisma:info Starting a postgresql pool with 25 connections.
+prisma:query SELECT "public"."auth_users"."id_auth", "public"."auth_users"."user_name", "public"."auth_users"."shared_key", "public"."auth_users"."api_key", "public"."auth_users"."active", "public"."auth_users"."creation_date", "public"."auth_users"."customer_id", "public"."auth_users"."password", "public"."auth_users"."status", "public"."auth_users"."expiration_date", "public"."auth_users"."description", "public"."auth_users"."permissions", "public"."auth_users"."login_count", "public"."auth_users"."last_login", "public"."auth_users"."modification_date" FROM "public"."auth_users" WHERE 1=1 OFFSET $1
+prisma:query SELECT "public"."customers"."id_customer", "public"."customers"."name", "public"."customers"."short_name" FROM "public"."customers" WHERE "public"."customers"."id_customer" IN ($1,$2) OFFSET $3
+📋 Auth Users encontrados:
+
+🔐 Auth User ID: 1n
+   user_name: Digital-X
+   api_key: xafra_mfpqcyvr_f9ab4fd209a828dcd1bce8005f660fae
+   customer_id: 1n
+   customer info: { id_customer: 1n, name: 'Digital-X', short_name: 'Ditial-X' }
+   creation_date: 2025-09-18T18:14:34.648Z
+
+🔐 Auth User ID: 2n
+   user_name: Gomovil
+   api_key: xafra_mfpqwrai_6f4b47226e39ca34417bc6352276193c
+   customer_id: 2n
+   customer info: { id_customer: 2n, name: 'Gomovil', short_name: 'Gomovil' }
+   creation_date: 2025-09-18T18:29:57.930Z
+
+📊 Customers disponibles:
+prisma:query SELECT "public"."customers"."id_customer", "public"."customers"."name", "public"."customers"."short_name", "public"."customers"."mail", "public"."customers"."phone", "public"."customers"."country", "public"."customers"."operator" FROM "public"."customers" WHERE 1=1 OFFSET $1
+   ID 1: Digital-X (Ditial-X)
+   ID 2: Gomovil (Gomovil)
+Database disconnected successfully

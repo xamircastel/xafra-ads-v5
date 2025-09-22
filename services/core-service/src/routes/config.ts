@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { prisma } from '@xafra/database';
-import { loggers } from '@xafra/shared/logger';
-import { authenticate } from '@xafra/shared/middleware';
+import { prisma } from '../utils/simple-database';
+import { loggers } from '../utils/simple-logger';
+import { authenticate } from '../utils/simple-auth';
 import { z } from 'zod';
 
 const router = Router();

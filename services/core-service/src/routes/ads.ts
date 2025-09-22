@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
-import { logger } from "@xafra/shared/logger";
-import { prisma } from "@xafra/database";
-import { generateTrackingId, generateUUID } from "@xafra/shared/utils";
+import { logger } from "../utils/simple-logger";
+import { prisma } from "../utils/simple-database";
+import { generateTrackingId, generateUUID } from "../utils/simple-utils";
 
 const router = Router();
 

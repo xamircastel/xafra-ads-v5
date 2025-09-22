@@ -1,0 +1,271 @@
+# Cloud Monitoring Configuration for Xafra-ads v5
+# Configuración de monitoreo para los 5 microservicios
+
+displayName: "Xafra-ads v5 Monitoring"
+combiner: OR
+documentation:
+  content: |
+    Comprehensive monitoring setup for Xafra-ads v5 microservices architecture.
+    Monitors health, performance, errors, and business metrics across all services.
+    
+    Services monitored:
+    - Core Service (Main redirects and utilities)
+    - Auth Service (Authentication and customer management)
+    - Tracking Service (Click tracking and analytics)
+    - Campaign Service (Campaign management and performance)
+    - Postback Service (Webhook notifications)
+
+# Alert Policies Configuration
+alertPolicies:
+  # 1. Service Health Monitoring
+  - displayName: "Service Health - Critical"
+    documentation:
+      content: "Alerts when any service health check fails"
+    conditions:
+      - displayName: "Health Check Failure"
+        conditionThreshold:
+          filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_count"'
+          comparison: COMPARISON_GREATER_THAN
+          thresholdValue: 10
+          duration: "300s"
+          aggregations:
+            - alignmentPeriod: "60s"
+              perSeriesAligner: ALIGN_RATE
+              crossSeriesReducer: REDUCE_SUM
+              groupByFields:
+                - "resource.label.service_name"
+    notificationChannels: []
+    alertStrategy:
+      autoClose: "86400s"
+
+  # 2. Error Rate Monitoring
+  - displayName: "High Error Rate - Critical"
+    documentation:
+      content: "Alerts when error rate exceeds 5% for any service"
+    conditions:
+      - displayName: "Error Rate > 5%"
+        conditionThreshold:
+          filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_count" AND metric.label.response_code_class="5xx"'
+          comparison: COMPARISON_GREATER_THAN
+          thresholdValue: 0.05
+          duration: "180s"
+          aggregations:
+            - alignmentPeriod: "60s"
+              perSeriesAligner: ALIGN_RATE
+              crossSeriesReducer: REDUCE_MEAN
+              groupByFields:
+                - "resource.label.service_name"
+
+  # 3. Response Time Monitoring
+  - displayName: "High Latency - Warning"
+    documentation:
+      content: "Alerts when response time exceeds 2 seconds (critical for ad redirects)"
+    conditions:
+      - displayName: "Response Time > 2s"
+        conditionThreshold:
+          filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_latencies"'
+          comparison: COMPARISON_GREATER_THAN
+          thresholdValue: 2000
+          duration: "300s"
+          aggregations:
+            - alignmentPeriod: "60s"
+              perSeriesAligner: ALIGN_PERCENTILE_95
+              crossSeriesReducer: REDUCE_MAX
+              groupByFields:
+                - "resource.label.service_name"
+
+  # 4. Database Connection Monitoring
+  - displayName: "Database Connection Issues - Critical"
+    documentation:
+      content: "Alerts when database connections fail or timeout"
+    conditions:
+      - displayName: "DB Connection Errors"
+        conditionThreshold:
+          filter: 'resource.type="cloud_sql_database" AND metric.type="cloudsql.googleapis.com/database/network/connections"'
+          comparison: COMPARISON_LESS_THAN
+          thresholdValue: 1
+          duration: "180s"
+          aggregations:
+            - alignmentPeriod: "60s"
+              perSeriesAligner: ALIGN_MEAN
+              crossSeriesReducer: REDUCE_MIN
+
+  # 5. Memory Usage Monitoring
+  - displayName: "High Memory Usage - Warning"
+    documentation:
+      content: "Alerts when memory usage exceeds 80%"
+    conditions:
+      - displayName: "Memory Usage > 80%"
+        conditionThreshold:
+          filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/container/memory/utilizations"'
+          comparison: COMPARISON_GREATER_THAN
+          thresholdValue: 0.80
+          duration: "300s"
+          aggregations:
+            - alignmentPeriod: "60s"
+              perSeriesAligner: ALIGN_MEAN
+              crossSeriesReducer: REDUCE_MAX
+              groupByFields:
+                - "resource.label.service_name"
+
+# Dashboards Configuration
+dashboards:
+  # Main System Overview Dashboard
+  - displayName: "Xafra-ads v5 - System Overview"
+    mosaicLayout:
+      tiles:
+        # Service Health Overview
+        - width: 6
+          height: 4
+          widget:
+            title: "Service Health Status"
+            scorecard:
+              timeSeriesQuery:
+                timeSeriesFilter:
+                  filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_count"'
+                  aggregation:
+                    alignmentPeriod: "60s"
+                    perSeriesAligner: ALIGN_RATE
+                    crossSeriesReducer: REDUCE_SUM
+                    groupByFields:
+                      - "resource.label.service_name"
+              sparkChartView:
+                sparkChartType: SPARK_LINE
+
+        # Request Rate
+        - width: 6
+          height: 4
+          widget:
+            title: "Request Rate (req/min)"
+            xyChart:
+              dataSets:
+                - timeSeriesQuery:
+                    timeSeriesFilter:
+                      filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_count"'
+                      aggregation:
+                        alignmentPeriod: "60s"
+                        perSeriesAligner: ALIGN_RATE
+                        crossSeriesReducer: REDUCE_SUM
+                        groupByFields:
+                          - "resource.label.service_name"
+                  plotType: LINE
+
+        # Error Rate
+        - width: 6
+          height: 4
+          widget:
+            title: "Error Rate (%)"
+            xyChart:
+              dataSets:
+                - timeSeriesQuery:
+                    timeSeriesFilter:
+                      filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_count" AND metric.label.response_code_class="5xx"'
+                      aggregation:
+                        alignmentPeriod: "60s"
+                        perSeriesAligner: ALIGN_RATE
+                        crossSeriesReducer: REDUCE_SUM
+                        groupByFields:
+                          - "resource.label.service_name"
+                  plotType: LINE
+
+        # Response Time
+        - width: 6
+          height: 4
+          widget:
+            title: "Response Time (95th percentile)"
+            xyChart:
+              dataSets:
+                - timeSeriesQuery:
+                    timeSeriesFilter:
+                      filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_latencies"'
+                      aggregation:
+                        alignmentPeriod: "60s"
+                        perSeriesAligner: ALIGN_PERCENTILE_95
+                        crossSeriesReducer: REDUCE_MEAN
+                        groupByFields:
+                          - "resource.label.service_name"
+                  plotType: LINE
+
+        # Memory Usage
+        - width: 12
+          height: 4
+          widget:
+            title: "Memory Usage by Service"
+            xyChart:
+              dataSets:
+                - timeSeriesQuery:
+                    timeSeriesFilter:
+                      filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/container/memory/utilizations"'
+                      aggregation:
+                        alignmentPeriod: "60s"
+                        perSeriesAligner: ALIGN_MEAN
+                        crossSeriesReducer: REDUCE_MEAN
+                        groupByFields:
+                          - "resource.label.service_name"
+                  plotType: STACKED_AREA
+
+  # Business Metrics Dashboard
+  - displayName: "Xafra-ads v5 - Business Metrics"
+    mosaicLayout:
+      tiles:
+        # Click Tracking Volume
+        - width: 6
+          height: 4
+          widget:
+            title: "Ad Clicks per Hour"
+            xyChart:
+              dataSets:
+                - timeSeriesQuery:
+                    timeSeriesFilter:
+                      filter: 'resource.type="cloud_run_revision" AND resource.label.service_name="tracking-service-stg" AND metric.type="run.googleapis.com/request_count"'
+                      aggregation:
+                        alignmentPeriod: "3600s"
+                        perSeriesAligner: ALIGN_SUM
+                        crossSeriesReducer: REDUCE_SUM
+                  plotType: STACKED_BAR
+
+        # Conversion Tracking
+        - width: 6
+          height: 4
+          widget:
+            title: "Conversions per Hour"
+            xyChart:
+              dataSets:
+                - timeSeriesQuery:
+                    timeSeriesFilter:
+                      filter: 'resource.type="cloud_run_revision" AND resource.label.service_name="tracking-service-stg" AND metric.type="run.googleapis.com/request_count" AND metric.label.response_code="200"'
+                      aggregation:
+                        alignmentPeriod: "3600s"
+                        perSeriesAligner: ALIGN_SUM
+                        crossSeriesReducer: REDUCE_SUM
+                  plotType: LINE
+
+        # Postback Success Rate
+        - width: 12
+          height: 4
+          widget:
+            title: "Postback Delivery Success Rate"
+            xyChart:
+              dataSets:
+                - timeSeriesQuery:
+                    timeSeriesFilter:
+                      filter: 'resource.type="cloud_run_revision" AND resource.label.service_name="postback-service-stg" AND metric.type="run.googleapis.com/request_count"'
+                      aggregation:
+                        alignmentPeriod: "300s"
+                        perSeriesAligner: ALIGN_RATE
+                        crossSeriesReducer: REDUCE_MEAN
+                  plotType: LINE
+
+# Notification Channels (to be configured)
+notificationChannels:
+  - type: "email"
+    displayName: "Engineering Team Alerts"
+    description: "Primary notification channel for critical alerts"
+    # labels:
+    #   email_address: "engineering@xafra.com"
+    
+  - type: "slack" 
+    displayName: "Slack Engineering Channel"
+    description: "Slack notifications for monitoring alerts"
+    # labels:
+    #   channel_name: "#engineering-alerts"

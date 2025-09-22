@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { logger } from '@xafra/shared/logger';
-import { checkDatabaseHealth } from '@xafra/database';
+import { logger } from '../utils/simple-logger';
+import { checkDatabaseHealth } from '../utils/simple-database';
 
 const router = Router();
 

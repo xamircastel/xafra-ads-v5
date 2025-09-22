@@ -1,0 +1,23 @@
+# Xafra-ads v5 - Simple API Gateway
+FROM nginx:1.25-alpine
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy configurations
+COPY infrastructure/nginx/nginx-gateway.conf /etc/nginx/nginx.conf
+COPY infrastructure/nginx/conf.d/gateway-routes.conf /etc/nginx/conf.d/gateway-routes.conf
+
+# Create basic health check
+RUN echo '#!/bin/sh' > /usr/local/bin/healthcheck.sh \
+    && echo 'exit 0' >> /usr/local/bin/healthcheck.sh \
+    && chmod +x /usr/local/bin/healthcheck.sh
+
+# Basic error pages
+RUN mkdir -p /usr/share/nginx/html \
+    && echo '<h1>404 - Not Found</h1>' > /usr/share/nginx/html/404.html \
+    && echo '<h1>Service Unavailable</h1>' > /usr/share/nginx/html/50x.html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,51 @@
+# Auth Service Staging Dockerfile
+FROM node:20-alpine
+
+# Install necessary packages for Alpine and Prisma
+RUN apk add --no-cache curl bash git openssl openssl-dev
+
+# Set working directory
+WORKDIR /app
+
+# Copy all source code
+COPY . .
+
+# Copy staging environment file as .env
+COPY environments/staging/.env.staging .env
+
+# Debug: verificar que el archivo se copió correctamente
+RUN echo "=== DEBUG: Verificando archivo .env ===" && ls -la .env && echo "=== CONTENIDO .env ===" && cat .env
+
+# Install dependencies
+RUN npm install
+
+# Build shared packages first
+RUN npm run build --workspace=@xafra/shared
+RUN npm run build --workspace=@xafra/database
+
+# Set Prisma binary target for Alpine Linux
+ENV PRISMA_CLI_BINARY_TARGETS="linux-musl"
+
+# Generate Prisma client for Alpine
+RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
+
+# Build auth-service
+RUN rm -rf services/auth-service/dist/ && npm run build --workspace=auth-service
+
+# Copy .env to the correct location for the service
+RUN cp .env services/auth-service/dist/.env
+
+# Verify build output
+RUN ls -la services/auth-service/dist/
+RUN find services/auth-service/dist -name "*.js" -type f
+
+# Environment variables
+ENV NODE_ENV=staging
+ENV PORT=8080
+
+# Expose port
+EXPOSE 8080
+
+# Ensure working directory and start the service
+WORKDIR /app
+CMD ["node", "services/auth-service/dist/services/auth-service/src/index.js"]

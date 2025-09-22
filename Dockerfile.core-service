@@ -1,0 +1,83 @@
+# 🚀 DOCKERFILE COMPLETO PARA CORE SERVICE
+# =========================================
+# Incluye TODAS las dependencias necesarias para build completo
+
+FROM node:20-alpine AS base
+
+# Instalar herramientas necesarias del sistema
+RUN apk add --no-cache \
+    curl \
+    bash \
+    git
+
+WORKDIR /app
+
+# ============================================
+# STAGE 1: INSTALAR TODAS LAS DEPENDENCIAS
+# ============================================
+FROM base AS dependencies
+
+# Copiar package files del workspace root
+COPY package*.json ./
+COPY tsconfig*.json ./
+
+# Copiar packages (shared dependencies)
+COPY packages/ ./packages/
+
+# Copiar el servicio específico
+COPY services/core-service/ ./services/core-service/
+
+# Instalar TODAS las dependencias (dev + production)
+# Esto incluye TypeScript, eslint, prettier, etc.
+RUN npm ci
+
+# ============================================  
+# STAGE 2: BUILD DE TYPESCRIPT
+# ============================================
+FROM dependencies AS builder
+
+# Compilar el workspace completo
+RUN npm run build --workspace=core-service
+
+# Verificar que el build se completó
+RUN ls -la services/core-service/dist/
+
+# ============================================
+# STAGE 3: IMAGEN DE PRODUCCIÓN OPTIMIZADA
+# ============================================
+FROM node:20-alpine AS production
+
+# Instalar herramientas mínimas para producción
+RUN apk add --no-cache curl
+
+WORKDIR /app
+
+# Copiar package files
+COPY package*.json ./
+
+# Copiar packages compilados
+COPY --from=builder /app/packages/ ./packages/
+
+# Copiar el servicio compilado
+COPY --from=builder /app/services/core-service/dist/ ./services/core-service/dist/
+COPY --from=builder /app/services/core-service/package.json ./services/core-service/
+
+# Instalar solo dependencias de producción
+RUN npm ci --only=production --workspace=core-service
+
+# Configuración de runtime
+EXPOSE 8080
+ENV NODE_ENV=staging
+ENV PORT=8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Usuario no-root por seguridad
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nextjs -u 1001
+USER nextjs
+
+# Comando de inicio
+CMD ["node", "services/core-service/dist/index.js"]
