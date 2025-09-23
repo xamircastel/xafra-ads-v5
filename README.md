@@ -91,12 +91,32 @@ xafra-ads-v5/
 │   ├── database/             # Prisma schemas & migrations
 │   ├── types/                # TypeScript definitions
 │   └── utils/                # Helper functions
-├── infrastructure/           # Docker & deployment
-│   ├── docker/               # Dockerfiles
+├── deployment/               # 🚀 Unified deployment configs
+│   ├── Dockerfile.*          # Service-specific Dockerfiles
+│   └── cloudbuild-*.yaml     # Cloud Build configurations
+├── infrastructure/           # Legacy deployment files
+│   ├── docker/               # ⚠️ Deprecated Dockerfiles
 │   ├── nginx/                # API Gateway config
-│   └── k8s/                  # Kubernetes manifests
+│   └── monitoring/           # Monitoring setup
 └── docs/                     # Documentation
 ```
+
+### 🚀 Deployment
+
+#### Quick Deployment
+```bash
+# Deploy any service to staging
+gcloud builds submit --config=deployment/cloudbuild-[service-name].yaml .
+
+# Example: Deploy core-service
+gcloud builds submit --config=deployment/cloudbuild-core-service.yaml .
+```
+
+#### 📖 Deployment Documentation
+- **[Deployment Quick Reference](DEPLOYMENT_QUICK_REFERENCE.md)** - Commands and common solutions
+- **[Deployment Troubleshooting Guide](DEPLOYMENT_TROUBLESHOOTING_GUIDE.md)** - Complete analysis and problem resolution
+
+**Important:** Use only files in `deployment/` folder. Files in `infrastructure/docker/` are deprecated.
 
 ### 🔧 Available Scripts
 

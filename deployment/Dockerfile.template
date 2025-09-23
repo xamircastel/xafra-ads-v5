@@ -1,0 +1,60 @@
+# 📦 DOCKERFILE TEMPLATE UNIFICADO PARA XAFRA-ADS V5
+# Este archivo sirve como base para todos los servicios
+
+ARG NODE_VERSION=20-alpine
+FROM node:${NODE_VERSION}
+
+WORKDIR /app
+
+# Instalar dependencias básicas del sistema
+RUN apk add --no-cache openssl ca-certificates
+
+# Copiar archivos de configuración del workspace
+COPY package*.json ./
+COPY tsconfig*.json ./
+
+# Instalar dependencias del workspace
+RUN npm ci --only=production
+
+# Copiar código fuente común
+COPY packages/ ./packages/
+COPY environments/ ./environments/
+
+# Variables que se deben definir en cada servicio específico
+ARG SERVICE_NAME
+ARG SERVICE_PORT=8080
+
+# Copiar código del servicio específico
+COPY services/${SERVICE_NAME}/ ./services/${SERVICE_NAME}/
+
+# Cambiar al directorio del servicio
+WORKDIR /app/services/${SERVICE_NAME}
+
+# Instalar dependencias específicas del servicio
+RUN npm ci
+
+# Compilar TypeScript
+RUN npm run build
+
+# Generar Prisma Client si es necesario
+RUN if [ -f "../../packages/database/prisma/schema.prisma" ]; then \
+    cd ../../packages/database && \
+    npx prisma generate; \
+    fi
+
+# Volver al directorio principal
+WORKDIR /app
+
+# Configurar variables de ambiente
+ENV NODE_ENV=staging
+ENV PORT=${SERVICE_PORT}
+
+# Exponer puerto
+EXPOSE ${SERVICE_PORT}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
+
+# Comando de inicio
+CMD npm run start --workspace=${SERVICE_NAME}
