@@ -18,15 +18,6 @@ router.get('/customer/:customerId', async (req: Request, res: Response) => {
         customer_id: parseInt(customerId as string),
         status: 1
       },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            status: true
-          }
-        }
-      },
       orderBy: {
         last_login: 'desc'
       },
@@ -38,48 +29,40 @@ router.get('/customer/:customerId', async (req: Request, res: Response) => {
 
     // Check cache for active sessions
     for (const authUser of authUsers) {
-      const cacheKey = `auth:login:${authUser.apikey}`;
+      const cacheKey = `auth:login:${authUser.api_key}`;
       const cachedSession = await cache.get(cacheKey);
       
       if (cachedSession) {
         const sessionData = JSON.parse(cachedSession as string);
         sessions.push({
-          authUserId: authUser.id,
-          username: authUser.username,
-          apikey: authUser.apikey.substring(0, 8) + '...' + authUser.apikey.substring(-4),
+          authUserId: authUser.id_auth,
+          username: authUser.user_name,
+          apikey: authUser.api_key.substring(0, 8) + '...' + authUser.api_key.substring(-4),
           lastLogin: authUser.last_login ? new Date(Number(authUser.last_login)).toISOString() : null,
           loginCount: authUser.login_count || 0,
-          sessionActive: true,
-          sessionData: {
-            loginTime: sessionData.loginTime,
-            expiresIn: sessionData.expiresIn
-          }
+          isActive: true,
+          cacheExpiry: sessionData.exp ? new Date(sessionData.exp * 1000).toISOString() : null
         });
       } else {
+        // Not cached = not active session
         sessions.push({
-          authUserId: authUser.id,
-          username: authUser.username,
-          apikey: authUser.apikey.substring(0, 8) + '...' + authUser.apikey.substring(-4),
+          authUserId: authUser.id_auth,
+          username: authUser.user_name,
+          apikey: authUser.api_key.substring(0, 8) + '...' + authUser.api_key.substring(-4),
           lastLogin: authUser.last_login ? new Date(Number(authUser.last_login)).toISOString() : null,
           loginCount: authUser.login_count || 0,
-          sessionActive: false,
-          sessionData: null
+          isActive: false,
+          cacheExpiry: null
         });
       }
     }
-
-    const totalSessions = authUsers.length;
-    const activeSessions = sessions.filter(s => s.sessionActive).length;
 
     res.json({
       success: true,
       data: {
         customerId: parseInt(customerId as string),
-        totalSessions,
-        activeSessions,
-        inactiveSessions: totalSessions - activeSessions,
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
+        totalSessions: sessions.length,
+        activeSessions: sessions.filter(s => s.isActive).length,
         sessions
       }
     });
@@ -91,61 +74,59 @@ router.get('/customer/:customerId', async (req: Request, res: Response) => {
     });
 
     res.status(500).json({
-      error: 'Failed to retrieve customer sessions',
-      code: 'SESSIONS_RETRIEVAL_ERROR'
+      error: 'Customer sessions retrieval failed',
+      code: 'SESSIONS_ERROR'
     });
   }
 });
 
 // Get session details by API key
-router.get('/apikey/:apikey', async (req: Request, res: Response) => {
+router.get('/details/:apikey', async (req: Request, res: Response) => {
   const { apikey } = req.params;
 
   try {
     const authUser = await prisma.authUser.findFirst({
       where: {
-        apikey: apikey,
+        api_key: apikey,
         status: 1
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            status: true
-          }
-        }
       }
     });
 
     if (!authUser) {
       res.status(404).json({
-        error: 'API key not found or inactive',
-        code: 'APIKEY_NOT_FOUND'
+        error: 'Session not found',
+        code: 'SESSION_NOT_FOUND'
       });
       return;
     }
 
-    // Check for active session
+    // Check if session is active in cache
     const cacheKey = `auth:login:${apikey}`;
     const cachedSession = await cache.get(cacheKey);
 
+    // Get customer info
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id_customer: authUser.customer_id
+      }
+    });
+
     const sessionDetails = {
-      authUserId: authUser.id,
-      username: authUser.username,
-      apikey: apikey.substring(0, 8) + '...' + apikey.substring(-4),
+      authUserId: authUser.id_auth,
+      username: authUser.user_name,
       customerId: authUser.customer_id,
-      customer: authUser.customer,
+      customerName: customer?.name || 'Unknown',
+      apikey: apikey.substring(0, 8) + '...' + apikey.substring(-4),
+      status: authUser.status,
+      isActive: !!cachedSession,
       lastLogin: authUser.last_login ? new Date(Number(authUser.last_login)).toISOString() : null,
       loginCount: authUser.login_count || 0,
-      sessionActive: !!cachedSession,
-      sessionData: cachedSession ? JSON.parse(cachedSession as string) : null,
+      expirationDate: authUser.expiration_date ? new Date(Number(authUser.expiration_date)).toISOString() : null,
       createdAt: new Date(Number(authUser.creation_date)).toISOString()
     };
 
-    loggers.auth('session_details_retrieved', apikey.substring(0, 8) + '...', authUser.customer_id, {
-      authUserId: authUser.id,
-      sessionActive: !!cachedSession,
+    loggers.auth('session_details_retrieved', apikey.substring(0, 8) + '...', Number(authUser.customer_id), {
+      authUserId: authUser.id_auth,
       ip: req.ip
     });
 
@@ -161,52 +142,45 @@ router.get('/apikey/:apikey', async (req: Request, res: Response) => {
     });
 
     res.status(500).json({
-      error: 'Failed to retrieve session details',
+      error: 'Session details retrieval failed',
       code: 'SESSION_DETAILS_ERROR'
     });
   }
 });
 
-// Invalidate session by API key
-router.delete('/apikey/:apikey', async (req: Request, res: Response) => {
+// Invalidate session (logout)
+router.delete('/invalidate/:apikey', async (req: Request, res: Response) => {
   const { apikey } = req.params;
-  const { reason } = req.body;
 
   try {
     const authUser = await prisma.authUser.findFirst({
       where: {
-        apikey: apikey
+        api_key: apikey
       }
     });
 
     if (!authUser) {
       res.status(404).json({
-        error: 'API key not found',
-        code: 'APIKEY_NOT_FOUND'
+        error: 'Session not found',
+        code: 'SESSION_NOT_FOUND'
       });
       return;
     }
 
-    // Clear session cache
+    // Remove from cache
     const cacheKey = `auth:login:${apikey}`;
-    const wasActive = await cache.get(cacheKey);
     await cache.del(cacheKey);
 
-    loggers.auth('session_invalidated', apikey.substring(0, 8) + '...', authUser.customer_id, {
-      authUserId: authUser.id,
-      wasActive: !!wasActive,
-      reason: reason || null,
+    loggers.auth('session_invalidated', apikey.substring(0, 8) + '...', Number(authUser.customer_id), {
+      authUserId: authUser.id_auth,
       ip: req.ip
     });
 
     res.json({
       success: true,
       data: {
-        authUserId: authUser.id,
-        apikey: apikey.substring(0, 8) + '...' + apikey.substring(-4),
-        sessionInvalidated: true,
-        wasActive: !!wasActive,
-        invalidatedAt: new Date().toISOString()
+        authUserId: authUser.id_auth,
+        message: 'Session invalidated successfully'
       }
     });
 
@@ -217,54 +191,209 @@ router.delete('/apikey/:apikey', async (req: Request, res: Response) => {
     });
 
     res.status(500).json({
-      error: 'Failed to invalidate session',
+      error: 'Session invalidation failed',
       code: 'SESSION_INVALIDATION_ERROR'
     });
   }
 });
 
-// Invalidate all sessions for a customer
-router.delete('/customer/:customerId/all', async (req: Request, res: Response) => {
-  const { customerId } = req.params;
-  const { reason } = req.body;
+// Get all active sessions across all customers (admin endpoint)
+router.get('/all-active', async (req: Request, res: Response) => {
+  const { limit = '100', offset = '0' } = req.query;
 
   try {
+    // Get all active auth users
     const authUsers = await prisma.authUser.findMany({
       where: {
-        customer_id: parseInt(customerId as string)
+        status: 1
       },
-      select: {
-        id: true,
-        apikey: true
+      orderBy: {
+        last_login: 'desc'
+      },
+      take: parseInt(limit as string),
+      skip: parseInt(offset as string)
+    });
+
+    const activeSessions = [];
+
+    // Check cache for each user
+    for (const authUser of authUsers) {
+      const cacheKey = `auth:login:${authUser.api_key}`;
+      const cachedSession = await cache.get(cacheKey);
+      
+      if (cachedSession) {
+        // Get customer info
+        const customer = await prisma.customer.findFirst({
+          where: {
+            id_customer: authUser.customer_id
+          }
+        });
+
+        activeSessions.push({
+          authUserId: authUser.id_auth,
+          username: authUser.user_name,
+          customerId: authUser.customer_id,
+          customerName: customer?.name || 'Unknown',
+          apikey: authUser.api_key.substring(0, 8) + '...' + authUser.api_key.substring(-4),
+          lastLogin: authUser.last_login ? new Date(Number(authUser.last_login)).toISOString() : null,
+          loginCount: authUser.login_count || 0
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        totalActiveSessions: activeSessions.length,
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+        sessions: activeSessions
       }
     });
 
-    if (authUsers.length === 0) {
-      res.status(404).json({
-        error: 'No API keys found for customer',
-        code: 'NO_APIKEYS_FOUND'
-      });
-      return;
+  } catch (error) {
+    loggers.error('All active sessions retrieval failed', error as Error, {
+      ip: req.ip
+    });
+
+    res.status(500).json({
+      error: 'All active sessions retrieval failed',
+      code: 'ALL_SESSIONS_ERROR'
+    });
+  }
+});
+
+// Get session analytics
+router.get('/analytics', async (req: Request, res: Response) => {
+  const { customerId } = req.query;
+
+  try {
+    const now = BigInt(Date.now());
+    const hourAgo = now - BigInt(60 * 60 * 1000);
+    const dayAgo = now - BigInt(24 * 60 * 60 * 1000);
+    const weekAgo = now - BigInt(7 * 24 * 60 * 60 * 1000);
+
+    let whereClause: any = { status: 1 };
+    
+    if (customerId) {
+      whereClause.customer_id = parseInt(customerId as string);
     }
+
+    const [
+      totalAuthUsers,
+      activeAuthUsers,
+      loginsLastHour,
+      loginsLastDay,
+      loginsLastWeek
+    ] = await Promise.all([
+      prisma.authUser.count({ where: whereClause }),
+      prisma.authUser.count({ 
+        where: { 
+          ...whereClause,
+          last_login: { gte: dayAgo }
+        } 
+      }),
+      prisma.authUser.count({ 
+        where: { 
+          ...whereClause,
+          last_login: { gte: hourAgo }
+        } 
+      }),
+      prisma.authUser.count({ 
+        where: { 
+          ...whereClause,
+          last_login: { gte: dayAgo }
+        } 
+      }),
+      prisma.authUser.count({ 
+        where: { 
+          ...whereClause,
+          last_login: { gte: weekAgo }
+        } 
+      })
+    ]);
+
+    // Count active sessions from cache
+    const allAuthUsers = await prisma.authUser.findMany({
+      where: whereClause,
+      select: {
+        id_auth: true,
+        api_key: true
+      }
+    });
+
+    let activeSessionsCount = 0;
+    for (const user of allAuthUsers) {
+      const cacheKey = `auth:login:${user.api_key}`;
+      const cachedSession = await cache.get(cacheKey);
+      if (cachedSession) {
+        activeSessionsCount++;
+      }
+    }
+
+    const analytics = {
+      totalAuthUsers,
+      activeAuthUsers,
+      activeSessionsCount,
+      loginActivity: {
+        lastHour: loginsLastHour,
+        lastDay: loginsLastDay,
+        lastWeek: loginsLastWeek
+      },
+      sessionMetrics: {
+        averageSessionsPerUser: totalAuthUsers > 0 ? (activeSessionsCount / totalAuthUsers).toFixed(2) : 0,
+        sessionUtilization: totalAuthUsers > 0 ? ((activeSessionsCount / totalAuthUsers) * 100).toFixed(1) + '%' : '0%'
+      }
+    };
+
+    res.json({
+      success: true,
+      data: analytics
+    });
+
+  } catch (error) {
+    loggers.error('Session analytics retrieval failed', error as Error, {
+      customerId,
+      ip: req.ip
+    });
+
+    res.status(500).json({
+      error: 'Session analytics retrieval failed',
+      code: 'ANALYTICS_ERROR'
+    });
+  }
+});
+
+// Invalidate all sessions for a customer
+router.delete('/customer/:customerId/invalidate-all', async (req: Request, res: Response) => {
+  const { customerId } = req.params;
+
+  try {
+    // Get all auth users for the customer
+    const authUsers = await prisma.authUser.findMany({
+      where: {
+        customer_id: parseInt(customerId as string)
+      }
+    });
 
     let invalidatedCount = 0;
 
-    // Clear all session caches for this customer
+    // Remove all sessions from cache
     for (const authUser of authUsers) {
-      const cacheKey = `auth:login:${authUser.apikey}`;
-      const wasActive = await cache.get(cacheKey);
-      if (wasActive) {
-        await cache.del(cacheKey);
+      const cacheKey = `auth:login:${authUser.api_key}`;
+      const result = await cache.del(cacheKey);
+      if (result) {
         invalidatedCount++;
       }
     }
 
-    loggers.auth('customer_sessions_invalidated', null, parseInt(customerId as string), {
-      totalApiKeys: authUsers.length,
-      invalidatedSessions: invalidatedCount,
-      reason: reason || null,
-      ip: req.ip
-    });
+    if (authUsers.length > 0) {
+      loggers.auth('customer_sessions_invalidated', 'bulk_operation', parseInt(customerId as string), {
+        invalidatedCount,
+        totalApiKeys: authUsers.length,
+        ip: req.ip
+      });
+    }
 
     res.json({
       success: true,
@@ -272,7 +401,7 @@ router.delete('/customer/:customerId/all', async (req: Request, res: Response) =
         customerId: parseInt(customerId as string),
         totalApiKeys: authUsers.length,
         invalidatedSessions: invalidatedCount,
-        invalidatedAt: new Date().toISOString()
+        message: `${invalidatedCount} active sessions invalidated`
       }
     });
 
@@ -283,197 +412,8 @@ router.delete('/customer/:customerId/all', async (req: Request, res: Response) =
     });
 
     res.status(500).json({
-      error: 'Failed to invalidate customer sessions',
-      code: 'CUSTOMER_SESSIONS_INVALIDATION_ERROR'
-    });
-  }
-});
-
-// Get session statistics
-router.get('/stats', async (req: Request, res: Response) => {
-  const { 
-    customer_id,
-    hours = '24' 
-  } = req.query;
-
-  try {
-    const hoursAgo = parseInt(hours as string);
-    const startTime = BigInt(Date.now() - (hoursAgo * 60 * 60 * 1000));
-
-    // Build where clause
-    const whereClause: any = {
-      last_login: {
-        gte: startTime
-      }
-    };
-
-    if (customer_id) {
-      whereClause.customer_id = parseInt(customer_id as string);
-    }
-
-    // Get login statistics
-    const [
-      totalActiveUsers,
-      recentLogins,
-      uniqueCustomers
-    ] = await Promise.all([
-      prisma.authUser.count({
-        where: {
-          status: 1,
-          ...(customer_id ? { customer_id: parseInt(customer_id as string) } : {})
-        }
-      }),
-      prisma.authUser.count({
-        where: whereClause
-      }),
-      customer_id ? 1 : prisma.authUser.groupBy({
-        by: ['customer_id'],
-        where: whereClause,
-        _count: {
-          customer_id: true
-        }
-      })
-    ]);
-
-    // Get most active users in the period
-    const mostActiveUsers = await prisma.authUser.findMany({
-      where: whereClause,
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      },
-      orderBy: {
-        login_count: 'desc'
-      },
-      take: 10
-    });
-
-    const sessionStats = {
-      period: `${hoursAgo} hours`,
-      totalActiveUsers,
-      recentLogins,
-      uniqueCustomers: customer_id ? 1 : Array.isArray(uniqueCustomers) ? uniqueCustomers.length : 0,
-      averageLoginsPerHour: Math.round(recentLogins / hoursAgo),
-      mostActiveUsers: mostActiveUsers.map(user => ({
-        authUserId: user.id,
-        username: user.username,
-        loginCount: user.login_count || 0,
-        lastLogin: user.last_login ? new Date(Number(user.last_login)).toISOString() : null,
-        customer: user.customer
-      }))
-    };
-
-    res.json({
-      success: true,
-      data: sessionStats
-    });
-
-  } catch (error) {
-    loggers.error('Session stats retrieval failed', error as Error, {
-      customerId: customer_id,
-      hours,
-      ip: req.ip
-    });
-
-    res.status(500).json({
-      error: 'Failed to retrieve session statistics',
-      code: 'SESSION_STATS_ERROR'
-    });
-  }
-});
-
-// Validate session token directly
-router.post('/validate', async (req: Request, res: Response) => {
-  const { token } = req.body;
-  const authHeader = req.headers.authorization;
-
-  const sessionToken = token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
-
-  try {
-    if (!sessionToken) {
-      res.status(400).json({
-        error: 'Session token is required',
-        code: 'MISSING_TOKEN'
-      });
-      return;
-    }
-
-    // Verify JWT token
-    const decoded = jwt.verify(sessionToken, process.env['JWT_SECRET'] || 'default-secret') as any;
-
-    if (decoded.type !== 'session') {
-      res.status(401).json({
-        error: 'Invalid token type',
-        code: 'INVALID_TOKEN_TYPE'
-      });
-      return;
-    }
-
-    // Check if user still exists and is active
-    const authUser = await prisma.authUser.findFirst({
-      where: {
-        id: decoded.userId,
-        status: 1
-      },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            status: true
-          }
-        }
-      }
-    });
-
-    if (!authUser) {
-      res.status(401).json({
-        error: 'User not found or inactive',
-        code: 'USER_INACTIVE'
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      data: {
-        valid: true,
-        sessionData: {
-          userId: decoded.userId,
-          customerId: decoded.customerId,
-          apikey: decoded.apikey?.substring(0, 8) + '...',
-          expiresAt: new Date(decoded.exp * 1000).toISOString()
-        },
-        user: {
-          id: authUser.id,
-          username: authUser.username,
-          customerId: authUser.customer_id,
-          status: authUser.status
-        },
-        customer: authUser.customer
-      }
-    });
-
-  } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
-      res.status(401).json({
-        error: 'Invalid or expired token',
-        code: 'INVALID_TOKEN'
-      });
-      return;
-    }
-
-    loggers.error('Session validation failed', error as Error, {
-      ip: req.ip
-    });
-
-    res.status(500).json({
-      error: 'Session validation failed',
-      code: 'VALIDATION_ERROR'
+      error: 'Customer sessions invalidation failed',
+      code: 'CUSTOMER_INVALIDATION_ERROR'
     });
   }
 });

@@ -7,12 +7,11 @@ import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 
-import { logger, loggers } from '@xafra/shared/logger';
-import { errorHandler, notFoundHandler, requestLogger } from '@xafra/shared/middleware/error';
-import { securityMiddleware } from '@xafra/shared/middleware/security';
-import { getConfig } from '@xafra/shared/config';
-import { connectDatabase, checkDatabaseHealth } from '@xafra/database';
-import { getCacheService } from '@xafra/shared/cache';
+import { logger, loggers } from './utils/simple-logger';
+import { errorHandler, notFoundHandler, requestLogger, securityMiddleware } from './utils/simple-middleware';
+import { getConfig } from './utils/simple-config';
+import { connectDatabase, checkDatabaseHealth } from './utils/simple-database';
+import { getCacheService } from './utils/simple-cache';
 
 // Import routes
 import authRoutes from './routes/auth.js';

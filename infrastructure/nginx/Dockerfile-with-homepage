@@ -1,0 +1,34 @@
+# Xafra-ads v5 - API Gateway with Homepage
+FROM nginx:1.25-alpine
+
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy nginx configurations with homepage support
+COPY infrastructure/nginx/nginx-gateway.conf /etc/nginx/nginx.conf
+COPY infrastructure/nginx/conf.d/gateway-routes-with-homepage.conf /etc/nginx/conf.d/gateway-routes.conf
+
+# Create directory for static files
+RUN mkdir -p /usr/share/nginx/html
+
+# Copy homepage React build (SAFE IMPLEMENTATION)
+COPY infrastructure/nginx/homepage/ /usr/share/nginx/html/
+
+# Create health check endpoint
+RUN echo '#!/bin/sh' > /usr/local/bin/healthcheck.sh \
+    && echo 'curl -f http://localhost/health || exit 1' >> /usr/local/bin/healthcheck.sh \
+    && chmod +x /usr/local/bin/healthcheck.sh
+
+# Basic error pages (fallback)
+RUN echo '<h1>404 - Not Found</h1><p>Xafra-ads v5</p>' > /usr/share/nginx/html/404.html \
+    && echo '<h1>Service Unavailable</h1><p>Xafra-ads v5</p>' > /usr/share/nginx/html/50x.html
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

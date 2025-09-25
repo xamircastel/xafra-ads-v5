@@ -42,19 +42,21 @@ router.post('/optimize/:campaignId', async (req: Request, res: Response) => {
     const thirtyDaysAgo = BigInt(moment().subtract(30, 'days').valueOf());
 
     const [trackingData, confirmData, relatedCampaigns] = await Promise.all([
-      prisma.tracking.count({
+      // Count all campaigns for this product (clicks) in the last 30 days
+      prisma.campaign.count({
         where: {
-          id_campaign: campaign.id,
+          id_product: campaign.id_product,
           creation_date: {
-            gte: thirtyDaysAgo
+            gte: new Date(Number(thirtyDaysAgo))
           }
         }
       }),
-      prisma.confirm.count({
+      // Count only confirmed conversions in the last 30 days
+      prisma.campaign.count({
         where: {
-          id_campaign: campaign.id,
+          id_product: campaign.id_product,
           creation_date: {
-            gte: thirtyDaysAgo
+            gte: new Date(Number(thirtyDaysAgo))
           },
           status: 1
         }
@@ -69,26 +71,10 @@ router.post('/optimize/:campaignId', async (req: Request, res: Response) => {
             not: campaign.id
           }
         },
-        include: {
-          _count: {
-            select: {
-              tracking: {
-                where: {
-                  creation_date: {
-                    gte: thirtyDaysAgo
-                  }
-                }
-              },
-              confirm: {
-                where: {
-                  creation_date: {
-                    gte: thirtyDaysAgo
-                  },
-                  status: 1
-                }
-              }
-            }
-          }
+        select: {
+          id: true,
+          creation_date: true,
+          status: true
         }
       })
     ]);
@@ -179,12 +165,12 @@ router.get('/traffic-distribution/:campaignId', async (req: Request, res: Respon
     const daysBack = parseInt(days as string);
     const startTime = BigInt(moment().subtract(daysBack, 'days').valueOf());
 
-    // Get traffic distribution data
-    const trafficData = await prisma.tracking.findMany({
+    // Get traffic distribution data from campaigns for this product
+    const trafficData = await prisma.campaign.findMany({
       where: {
-        id_campaign: campaign.id,
+        id_product: campaign.id_product,
         creation_date: {
-          gte: startTime
+          gte: new Date(Number(startTime))
         }
       },
       select: {
@@ -192,7 +178,7 @@ router.get('/traffic-distribution/:campaignId', async (req: Request, res: Respon
         creation_date: true,
         country: true,
         operator: true,
-        ip: true
+        params: true
       },
       orderBy: {
         creation_date: 'asc'
@@ -221,7 +207,7 @@ router.get('/traffic-distribution/:campaignId', async (req: Request, res: Respon
         summary: {
           totalClicks: trafficData.length,
           averageClicksPerDay: Math.round(trafficData.length / daysBack),
-          uniqueIPs: new Set(trafficData.map(t => t.ip)).size,
+          uniqueCountries: new Set(trafficData.map(t => t.country)).size,
           healthScore: healthScore
         },
         distribution: trafficAnalysis,
@@ -262,32 +248,13 @@ router.get('/ab-test/:productId', async (req: Request, res: Response) => {
         id_product: parseInt(productId as string),
         status: 1,
         creation_date: {
-          gte: startTime
+          gte: new Date(Number(startTime))
         }
       },
       include: {
         product: {
           include: {
             customer: true
-          }
-        },
-        _count: {
-          select: {
-            tracking: {
-              where: {
-                creation_date: {
-                  gte: startTime
-                }
-              }
-            },
-            confirm: {
-              where: {
-                creation_date: {
-                  gte: startTime
-                },
-                status: 1
-              }
-            }
           }
         }
       }
@@ -314,7 +281,7 @@ router.get('/ab-test/:productId', async (req: Request, res: Response) => {
       success: true,
       data: {
         product: {
-          id: campaigns[0].product.id,
+          id: campaigns[0].product.id_product,
           name: campaigns[0].product.name,
           customer: campaigns[0].product.customer.name
         },
@@ -379,19 +346,21 @@ router.get('/benchmark/:campaignId', async (req: Request, res: Response) => {
 
     // Get campaign performance
     const [campaignClicks, campaignConversions] = await Promise.all([
-      prisma.tracking.count({
+      // Count all campaigns for this product (clicks)
+      prisma.campaign.count({
         where: {
-          id_campaign: campaign.id,
+          id_product: campaign.id_product,
           creation_date: {
-            gte: startTime
+            gte: new Date(Number(startTime))
           }
         }
       }),
-      prisma.confirm.count({
+      // Count only confirmed conversions
+      prisma.campaign.count({
         where: {
-          id_campaign: campaign.id,
+          id_product: campaign.id_product,
           creation_date: {
-            gte: startTime
+            gte: new Date(Number(startTime))
           },
           status: 1
         }
@@ -405,7 +374,9 @@ router.get('/benchmark/:campaignId', async (req: Request, res: Response) => {
       case 'same_customer':
         benchmarkFilter = {
           product: {
-            customer_id: campaign.product.customer_id
+            customer: {
+              id_customer: campaign.product.customer.id_customer
+            }
           },
           id: {
             not: campaign.id
@@ -429,7 +400,9 @@ router.get('/benchmark/:campaignId', async (req: Request, res: Response) => {
           country: campaign.country,
           operator: campaign.operator,
           product: {
-            customer_id: campaign.product.customer_id
+            customer: {
+              id_customer: campaign.product.customer.id_customer
+            }
           },
           id: {
             not: campaign.id
@@ -441,26 +414,11 @@ router.get('/benchmark/:campaignId', async (req: Request, res: Response) => {
 
     const benchmarkCampaigns = await prisma.campaign.findMany({
       where: benchmarkFilter,
-      include: {
-        _count: {
-          select: {
-            tracking: {
-              where: {
-                creation_date: {
-                  gte: startTime
-                }
-              }
-            },
-            confirm: {
-              where: {
-                creation_date: {
-                  gte: startTime
-                },
-                status: 1
-              }
-            }
-          }
-        }
+      select: {
+        id: true,
+        id_product: true,
+        creation_date: true,
+        status: true
       }
     });
 

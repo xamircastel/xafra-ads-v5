@@ -63,10 +63,11 @@ router.get('/tracking/:originalTracking', authenticate, async (req: Request, res
     });
 
     if (!campaign) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: 'Campaign not found or access denied'
       });
+      return;
     }
 
     res.json({
@@ -95,7 +96,7 @@ router.get('/tracking/:originalTracking', authenticate, async (req: Request, res
 });
 
 // Update short_tracking configuration (single or bulk)
-router.post('/xafra', authenticate, async (req: Request, res: Response) => {
+router.post('/xafra', authenticate, async (req: Request, res: Response): Promise<void> => {
   try {
     const apikey = req.headers['x-api-key'] as string;
 
@@ -107,10 +108,11 @@ router.post('/xafra', authenticate, async (req: Request, res: Response) => {
       const validation = BulkKolbiConfigSchema.safeParse(req.body);
       
       if (!validation.success) {
-        return res.status(400).json({
+        res.status(400).json({
           error: 'Invalid bulk configuration format',
           details: validation.error.errors
         });
+        return;
       }
 
       const { configurations } = validation.data;
@@ -200,10 +202,11 @@ router.post('/xafra', authenticate, async (req: Request, res: Response) => {
       const validation = SingleKolbiConfigSchema.safeParse(req.body);
       
       if (!validation.success) {
-        return res.status(400).json({
+        res.status(400).json({
           error: 'Invalid configuration format',
           details: validation.error.errors
         });
+        return;
       }
 
       const { original_tracking, short_tracking, enabled } = validation.data;
@@ -229,10 +232,11 @@ router.post('/xafra', authenticate, async (req: Request, res: Response) => {
       });
 
       if (!campaign) {
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: 'Campaign not found or access denied'
         });
+        return;
       }
 
       // Update campaign with DateTime instead of BigInt

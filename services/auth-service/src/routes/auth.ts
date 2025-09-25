@@ -43,20 +43,12 @@ router.post('/login', async (req: Request, res: Response) => {
     // Validate API key
     const authUser = await prisma.authUser.findFirst({
       where: {
-        apikey: apikey,
+        api_key: apikey,
         status: 1
-      },
-      include: {
-        customer: true
       }
     });
 
     if (!authUser) {
-      loggers.auth('login_failed', apikey.substring(0, 8) + '...', null, {
-        reason: 'invalid_apikey',
-        ip: req.ip
-      });
-
       res.status(401).json({
         error: 'Invalid API key',
         code: 'INVALID_APIKEY'
@@ -64,15 +56,24 @@ router.post('/login', async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if password is required and validate
-    if (authUser.password && password) {
-      const isPasswordValid = await bcrypt.compare(password, authUser.password);
-      if (!isPasswordValid) {
-        loggers.auth('login_failed', apikey.substring(0, 8) + '...', authUser.customer_id, {
-          reason: 'invalid_password',
-          ip: req.ip
-        });
+    // Check if expired
+    if (authUser.expiration_date && new Date() > authUser.expiration_date) {
+      loggers.auth('login_failed', apikey.substring(0, 8) + '...', Number(authUser.customer_id), {
+        reason: 'expired',
+        ip: req.ip
+      });
 
+      res.status(401).json({
+        error: 'API key expired',
+        code: 'APIKEY_EXPIRED'
+      });
+      return;
+    }
+
+    // Password validation if required
+    if (authUser.password && password) {
+      const isValidPassword = await validatePassword(password, authUser.password);
+      if (!isValidPassword) {
         res.status(401).json({
           error: 'Invalid password',
           code: 'INVALID_PASSWORD'
@@ -81,58 +82,57 @@ router.post('/login', async (req: Request, res: Response) => {
       }
     }
 
-    // Generate session token
-    const sessionToken = jwt.sign(
-      {
-        userId: authUser.id,
-        customerId: authUser.customer_id,
-        apikey: apikey,
-        type: 'session'
-      },
-      process.env['JWT_SECRET'] || 'default-secret',
-      { expiresIn: '24h' }
-    );
-
-    // Create auth response
-    const authData = {
-      sessionToken,
-      user: {
-        id: authUser.id,
-        username: authUser.username,
-        customerId: authUser.customer_id,
-        status: authUser.status
-      },
-      customer: {
-        id: authUser.customer.id,
-        name: authUser.customer.name,
-        status: authUser.customer.status,
-        plan: authUser.customer.plan || 'basic'
-      },
-      permissions: {
-        canCreateCampaigns: true,
-        canViewAnalytics: true,
-        canManageProducts: authUser.customer.status === 1,
-        canAccessAPI: authUser.status === 1
-      },
-      expiresIn: '24h',
-      loginTime: new Date().toISOString()
-    };
-
-    // Cache for 1 hour
-    await cache.set(cacheKey, JSON.stringify(authData), 3600);
-
-    // Update last login
-    await prisma.authUser.update({
-      where: { id: authUser.id },
-      data: {
-        last_login: BigInt(Date.now()),
-        login_count: (authUser.login_count || 0) + 1
+    // Get customer info
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id_customer: authUser.customer_id
       }
     });
 
-    loggers.auth('login_success', apikey.substring(0, 8) + '...', authUser.customer_id, {
-      userId: authUser.id,
-      username: authUser.username,
+    // Generate JWT token
+    const tokenPayload = {
+      userId: authUser.id_auth,
+      customerId: authUser.customer_id,
+      apikey: apikey,
+      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+    };
+
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET || 'xafra-secret-key');
+
+    const authData = {
+      token,
+      user: {
+        id: authUser.id_auth,
+        username: authUser.user_name,
+        customerId: authUser.customer_id
+      },
+      customer: customer ? {
+        id: customer.id_customer,
+        name: customer.name
+      } : null,
+      permissions: {
+        canManageProducts: true, // Simplified - all customers can manage products
+        canViewReports: true,
+        canManageUsers: false
+      }
+    };
+
+    // Update last login
+    await prisma.authUser.update({
+      where: { id_auth: authUser.id_auth },
+      data: {
+        last_login: new Date(),
+        login_count: authUser.login_count + 1,
+        modification_date: new Date()
+      }
+    });
+
+    // Cache authentication data
+    await cache.set(cacheKey, JSON.stringify(authData), 3600); // 1 hour
+
+    loggers.auth('login_success', apikey.substring(0, 8) + '...', Number(authUser.customer_id), {
+      userId: authUser.id_auth,
+      username: authUser.user_name,
       ip: req.ip
     });
 
@@ -148,141 +148,139 @@ router.post('/login', async (req: Request, res: Response) => {
     });
 
     res.status(500).json({
-      error: 'Authentication failed',
-      code: 'AUTH_ERROR'
+      error: 'Login failed',
+      code: 'LOGIN_ERROR'
     });
   }
 });
 
-// Verify session token
-router.post('/verify', async (req: Request, res: Response) => {
+// Validate token
+router.post('/validate', async (req: Request, res: Response) => {
   const { token } = req.body;
-  const authHeader = req.headers.authorization;
-
-  const sessionToken = token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
 
   try {
-    if (!sessionToken) {
+    if (!token) {
       res.status(400).json({
-        error: 'Session token is required',
+        error: 'Token is required',
         code: 'MISSING_TOKEN'
       });
       return;
     }
 
     // Verify JWT token
-    const decoded = jwt.verify(sessionToken, process.env['JWT_SECRET'] || 'default-secret') as any;
-
-    if (decoded.type !== 'session') {
-      res.status(401).json({
-        error: 'Invalid token type',
-        code: 'INVALID_TOKEN_TYPE'
-      });
-      return;
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'xafra-secret-key') as any;
 
     // Check if user still exists and is active
     const authUser = await prisma.authUser.findFirst({
       where: {
-        id: decoded.userId,
+        id_auth: decoded.userId,
         status: 1
-      },
-      include: {
-        customer: true
       }
     });
 
     if (!authUser) {
       res.status(401).json({
-        error: 'User not found or inactive',
-        code: 'USER_INACTIVE'
-      });
-      return;
-    }
-
-    loggers.auth('session_verified', decoded.apikey?.substring(0, 8) + '...', decoded.customerId, {
-      userId: decoded.userId,
-      ip: req.ip
-    });
-
-    res.json({
-      success: true,
-      data: {
-        valid: true,
-        user: {
-          id: authUser.id,
-          username: authUser.username,
-          customerId: authUser.customer_id,
-          status: authUser.status
-        },
-        customer: {
-          id: authUser.customer.id,
-          name: authUser.customer.name,
-          status: authUser.customer.status
-        },
-        tokenData: {
-          userId: decoded.userId,
-          customerId: decoded.customerId,
-          expiresAt: new Date(decoded.exp * 1000).toISOString()
-        }
-      }
-    });
-
-  } catch (error) {
-    if (error instanceof jwt.JsonWebTokenError) {
-      loggers.auth('session_invalid', null, null, {
-        reason: error.message,
-        ip: req.ip
-      });
-
-      res.status(401).json({
-        error: 'Invalid or expired token',
+        error: 'Invalid token - user not found or inactive',
         code: 'INVALID_TOKEN'
       });
       return;
     }
 
-    loggers.error('Session verification failed', error as Error, {
-      ip: req.ip
+    // Check if expired
+    if (authUser.expiration_date && new Date() > authUser.expiration_date) {
+      res.status(401).json({
+        error: 'Token expired',
+        code: 'TOKEN_EXPIRED'
+      });
+      return;
+    }
+
+    // Get customer info
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id_customer: authUser.customer_id
+      }
     });
 
-    res.status(500).json({
-      error: 'Verification failed',
-      code: 'VERIFICATION_ERROR'
+    const validationData = {
+      valid: true,
+      user: {
+        id: authUser.id_auth,
+        username: authUser.user_name,
+        customerId: authUser.customer_id
+      },
+      customer: customer ? {
+        id: customer.id_customer,
+        name: customer.name
+      } : null
+    };
+
+    res.json({
+      success: true,
+      data: validationData
     });
+
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      res.status(401).json({
+        error: 'Invalid token',
+        code: 'INVALID_TOKEN'
+      });
+    } else {
+      loggers.error('Token validation failed', error as Error, {
+        ip: req.ip
+      });
+
+      res.status(500).json({
+        error: 'Token validation failed',
+        code: 'VALIDATION_ERROR'
+      });
+    }
   }
 });
 
-// Logout (invalidate session)
+// Logout
 router.post('/logout', async (req: Request, res: Response) => {
   const { token, apikey } = req.body;
-  const authHeader = req.headers.authorization;
-
-  const sessionToken = token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
 
   try {
-    if (sessionToken) {
-      try {
-        const decoded = jwt.verify(sessionToken, process.env['JWT_SECRET'] || 'default-secret') as any;
-        
-        // Clear cache
-        if (decoded.apikey) {
-          const cacheKey = `auth:login:${decoded.apikey}`;
-          await cache.del(cacheKey);
-        }
+    if (!token && !apikey) {
+      res.status(400).json({
+        error: 'Token or API key is required',
+        code: 'MISSING_AUTH'
+      });
+      return;
+    }
 
-        loggers.auth('logout_success', decoded.apikey?.substring(0, 8) + '...', decoded.customerId, {
-          userId: decoded.userId,
-          ip: req.ip
-        });
+    // If token provided, extract apikey from it
+    let logoutApikey = apikey;
+    if (token && !apikey) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'xafra-secret-key') as any;
+        logoutApikey = decoded.apikey;
       } catch (error) {
-        // Token might be expired or invalid, but we still try to clear cache
+        // Token invalid, but we can still proceed
       }
     }
 
-    if (apikey) {
-      const cacheKey = `auth:login:${apikey}`;
+    if (logoutApikey) {
+      // Remove from cache
+      const cacheKey = `auth:login:${logoutApikey}`;
       await cache.del(cacheKey);
+
+      // Get user info for logging
+      const authUser = await prisma.authUser.findFirst({
+        where: {
+          api_key: logoutApikey
+        }
+      });
+
+      if (authUser) {
+        loggers.auth('logout_success', logoutApikey.substring(0, 8) + '...', Number(authUser.customer_id), {
+          userId: authUser.id_auth,
+          ip: req.ip
+        });
+      }
     }
 
     res.json({
@@ -302,85 +300,71 @@ router.post('/logout', async (req: Request, res: Response) => {
   }
 });
 
-// Refresh session token
+// Refresh token
 router.post('/refresh', async (req: Request, res: Response) => {
   const { token } = req.body;
-  const authHeader = req.headers.authorization;
-
-  const sessionToken = token || (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null);
 
   try {
-    if (!sessionToken) {
+    if (!token) {
       res.status(400).json({
-        error: 'Session token is required',
+        error: 'Token is required',
         code: 'MISSING_TOKEN'
       });
       return;
     }
 
-    // Verify current token (allow expired tokens for refresh)
-    let decoded: any;
+    // Verify current token (allow expired ones for refresh)
+    let decoded;
     try {
-      decoded = jwt.verify(sessionToken, process.env['JWT_SECRET'] || 'default-secret');
+      decoded = jwt.verify(token, process.env.JWT_SECRET || 'xafra-secret-key') as any;
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
         // Allow expired tokens for refresh
-        decoded = jwt.decode(sessionToken);
+        decoded = jwt.decode(token) as any;
       } else {
         throw error;
       }
     }
 
-    if (!decoded || decoded.type !== 'session') {
-      res.status(401).json({
-        error: 'Invalid token',
-        code: 'INVALID_TOKEN'
-      });
-      return;
-    }
-
     // Check if user still exists and is active
     const authUser = await prisma.authUser.findFirst({
       where: {
-        id: decoded.userId,
+        id_auth: decoded.userId,
         status: 1
-      },
-      include: {
-        customer: true
       }
     });
 
     if (!authUser) {
       res.status(401).json({
-        error: 'User not found or inactive',
-        code: 'USER_INACTIVE'
+        error: 'Invalid token - user not found or inactive',
+        code: 'INVALID_TOKEN'
       });
       return;
     }
 
-    // Generate new session token
-    const newSessionToken = jwt.sign(
-      {
-        userId: authUser.id,
-        customerId: authUser.customer_id,
-        apikey: decoded.apikey,
-        type: 'session'
-      },
-      process.env['JWT_SECRET'] || 'default-secret',
-      { expiresIn: '24h' }
-    );
+    // Check if API key expired
+    if (authUser.expiration_date && new Date() > authUser.expiration_date) {
+      res.status(401).json({
+        error: 'API key expired',
+        code: 'APIKEY_EXPIRED'
+      });
+      return;
+    }
 
-    loggers.auth('session_refreshed', decoded.apikey?.substring(0, 8) + '...', decoded.customerId, {
-      userId: decoded.userId,
-      ip: req.ip
-    });
+    // Generate new token
+    const newTokenPayload = {
+      userId: authUser.id_auth,
+      customerId: authUser.customer_id,
+      apikey: decoded.apikey,
+      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+    };
+
+    const newToken = jwt.sign(newTokenPayload, process.env.JWT_SECRET || 'xafra-secret-key');
 
     res.json({
       success: true,
       data: {
-        sessionToken: newSessionToken,
-        expiresIn: '24h',
-        refreshedAt: new Date().toISOString()
+        token: newToken
       }
     });
 
@@ -390,18 +374,28 @@ router.post('/refresh', async (req: Request, res: Response) => {
         error: 'Invalid token',
         code: 'INVALID_TOKEN'
       });
-      return;
+    } else {
+      loggers.error('Token refresh failed', error as Error, {
+        ip: req.ip
+      });
+
+      res.status(500).json({
+        error: 'Token refresh failed',
+        code: 'REFRESH_ERROR'
+      });
     }
-
-    loggers.error('Session refresh failed', error as Error, {
-      ip: req.ip
-    });
-
-    res.status(500).json({
-      error: 'Refresh failed',
-      code: 'REFRESH_ERROR'
-    });
   }
 });
+
+// Helper functions
+async function validatePassword(password: string, hashedPassword: string): Promise<boolean> {
+  const [salt, hash] = hashedPassword.split(':');
+  return new Promise((resolve, reject) => {
+    require('crypto').pbkdf2(password, salt, 1000, 64, 'sha512', (err: any, derivedKey: any) => {
+      if (err) reject(err);
+      resolve(hash === derivedKey.toString('hex'));
+    });
+  });
+}
 
 export default router;

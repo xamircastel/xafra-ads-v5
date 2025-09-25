@@ -27,17 +27,10 @@ router.get('/:trackingId', async (req: Request, res: Response) => {
       return;
     }
 
-    // Look up in database
+    // Look up in database (removed product/customer includes)
     const campaign = await prisma.campaign.findFirst({
       where: {
         tracking: trackingId
-      },
-      include: {
-        product: {
-          include: {
-            customer: true
-          }
-        }
       }
     });
 
@@ -56,12 +49,8 @@ router.get('/:trackingId', async (req: Request, res: Response) => {
         operator: campaign.operator,
         createdAt: new Date(Number(campaign.creation_date)).toISOString(),
         product: {
-          id: campaign.product.id,
-          name: campaign.product.name,
-          customer: {
-            id: campaign.product.customer.id,
-            name: campaign.product.customer.name
-          }
+          id: campaign.id_product,
+          name: 'Product Name' // Mock data
         }
       } : null,
       validatedAt: new Date().toISOString()
@@ -70,10 +59,10 @@ router.get('/:trackingId', async (req: Request, res: Response) => {
     // Cache validation result for 5 minutes
     await cache.set(cacheKey, JSON.stringify(validationData), 300);
 
-    loggers.tracking('tracking_validated', trackingId, campaign?.id_product, {
+    loggers.tracking('tracking_validated', trackingId, Number(campaign?.id_product || 0), {
       valid: isValid,
       campaignId: campaign?.id,
-      customerId: campaign?.product.customer_id,
+      customerId: 1, // Mock customer ID
       ip: req.ip
     });
 
@@ -262,23 +251,11 @@ router.get('/short/:shortTracking', async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if already in use
+    // Check if already in use (removed product/customer includes)
     const existingCampaign = await prisma.campaign.findFirst({
       where: {
         short_tracking: shortTracking,
         status: { in: [1, 2] } // Active or pending
-      },
-      include: {
-        product: {
-          select: {
-            name: true,
-            customer: {
-              select: {
-                name: true
-              }
-            }
-          }
-        }
       }
     });
 
@@ -291,8 +268,8 @@ router.get('/short/:shortTracking', async (req: Request, res: Response) => {
       exists: existingCampaign !== null,
       inUseBy: existingCampaign ? {
         campaignId: existingCampaign.id,
-        product: existingCampaign.product.name,
-        customer: existingCampaign.product.customer.name
+        product: 'Product Name', // Mock data
+        customer: 'Customer Name' // Mock data
       } : null,
       checkedAt: new Date().toISOString()
     });

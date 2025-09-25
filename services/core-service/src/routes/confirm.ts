@@ -6,12 +6,12 @@ import axios from 'axios';
 const router = Router();
 
 // Simple confirmation endpoint: GET /confirm/{apikey}/{tracking_or_short_tracking}
-router.get('/:apikey/:tracking', async (req: Request, res: Response) => {
+router.get('/:apikey/:tracking', async (req: Request, res: Response): Promise<void> => {
   try {
     const { apikey, tracking } = req.params;
     
     // Log the confirmation attempt
-    loggers.tracking('confirmation_attempt', tracking, undefined, {
+    loggers.tracking('confirmation_attempt', tracking, 0, {
       apikey: apikey.substring(0, 8) + '...',
       ip: req.ip,
       userAgent: req.get('User-Agent')
@@ -19,11 +19,12 @@ router.get('/:apikey/:tracking', async (req: Request, res: Response) => {
 
     // Validate API key format
     if (!apikey || apikey.length < 20) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Invalid API key format',
         code: 'INVALID_API_KEY'
       });
+      return;
     }
 
     // Find campaign by tracking ID or short_tracking (for Kolbi)
@@ -59,17 +60,18 @@ router.get('/:apikey/:tracking', async (req: Request, res: Response) => {
     });
 
     if (!campaign) {
-      loggers.security('campaign_not_found', req.ip, {
+      loggers.security('campaign_not_found', req.ip || '0.0.0.0', {
         apikey: apikey.substring(0, 8) + '...',
         tracking: tracking
       });
 
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: 'Campaign not found or access denied',
         tracking_id: tracking,
         code: 'CAMPAIGN_NOT_FOUND'
       });
+      return;
     }
 
     // Check if already confirmed (status: 1=confirmed)
@@ -79,7 +81,7 @@ router.get('/:apikey/:tracking', async (req: Request, res: Response) => {
         apikey: apikey.substring(0, 8) + '...'
       });
 
-      return res.status(200).json({
+      res.status(200).json({
         success: true,
         message: 'Campaign already confirmed',
         data: {
@@ -88,9 +90,10 @@ router.get('/:apikey/:tracking', async (req: Request, res: Response) => {
           short_tracking: campaign.short_tracking,
           status: 'already_confirmed',
           confirmed_at: campaign.modification_date,
-          customer: campaign.product.customer.name
+          customer: campaign.product?.customer?.name || 'Unknown'
         }
       });
+      return;
     }
 
     // Update campaign status to confirmed (status: 1)
@@ -115,10 +118,10 @@ router.get('/:apikey/:tracking', async (req: Request, res: Response) => {
     });
 
     // Log successful confirmation
-    loggers.tracking('conversion_confirmed', campaign.tracking, Number(campaign.id_product), {
+    loggers.tracking('conversion_confirmed', campaign.tracking || 'N/A', Number(campaign.id_product), {
       campaignId: Number(campaign.id),
-      customerId: Number(campaign.product.customer.id_customer),
-      customerName: campaign.product.customer.name,
+      customerId: Number(campaign.product?.customer?.id_customer || 0),
+      customerName: campaign.product?.customer?.name || 'Unknown',
       productId: Number(campaign.id_product),
       isKolbiShort: campaign.short_tracking === tracking,
       trackingUsed: tracking,
@@ -145,7 +148,7 @@ router.get('/:apikey/:tracking', async (req: Request, res: Response) => {
         tracking_used: tracking,
         status: 'confirmed',
         confirmed_at: new Date().toISOString(),
-        customer: campaign.product.customer.name,
+        customer: campaign.product?.customer?.name || 'Unknown',
         product_id: Number(campaign.id_product),
         is_kolbi_confirmation: campaign.short_tracking === tracking
       }
@@ -171,20 +174,25 @@ router.get('/:apikey/:tracking', async (req: Request, res: Response) => {
 async function triggerPostbackNotifications(campaign: any, trackingUsed: string) {
   try {
     // Check if product has postback configuration
-    const customer = campaign.product.customer;
+    const customer = campaign.product?.customer;
     const product = campaign.product;
     
-    if (!product.url_redirect_postback) {
-      loggers.tracking('no_postback_url', 'N/A', undefined, {
-        customerId: Number(customer.id_customer),
-        customerName: customer.name,
-        productId: Number(product.id_product),
-        productName: product.name
+    if (!customer || !product?.url_redirect_postback) {
+      loggers.tracking('no_postback_url', 'N/A', 0, {
+        customerId: Number(customer?.id_customer || 0),
+        customerName: customer?.name || 'Unknown',
+        productId: Number(product?.id_product || 0),
+        productName: product?.name || 'Unknown'
       });
       return;
     }
 
-    const postbackUrl = `http://localhost:3005/api/postbacks/send`;
+    // Get postback service URL based on environment
+    const postbackUrl = process.env.NODE_ENV === 'production' 
+      ? process.env.POSTBACK_SERVICE_URL || 'https://postback-service-prod-xxx.a.run.app/api/postbacks/send'
+      : process.env.NODE_ENV === 'staging'
+      ? process.env.POSTBACK_SERVICE_URL || 'https://postback-service-stg-697203931362.us-central1.run.app/api/postbacks/send'
+      : process.env.POSTBACK_SERVICE_URL || 'http://localhost:8080/api/postbacks/send';
     
     const postbackData = {
       campaign_id: Number(campaign.id),
@@ -240,7 +248,7 @@ async function triggerPostbackNotifications(campaign: any, trackingUsed: string)
 
     loggers.error('Failed to send postback notification', error, {
       campaignId: Number(campaign.id),
-      customerId: Number(campaign.product.customer.id_customer)
+      customerId: Number(campaign.product?.customer?.id_customer || 0)
     });
     throw error;
   }

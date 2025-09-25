@@ -1,0 +1,89 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Campaign model
+model Campaign {
+  id               BigInt    @id @default(autoincrement())
+  tracking         String?   @db.VarChar(500)
+  short_tracking   String?   @db.VarChar(20)
+  id_product       BigInt?
+  status           Int?      @db.SmallInt
+  creation_date    DateTime? @default(now()) @db.Timestamp(6)
+  modification_date DateTime? @default(now()) @db.Timestamp(6)
+  uuid             String?   @db.VarChar(200)
+  country          String?   @db.VarChar(10)
+  operator         String?   @db.VarChar(50)
+  parameters       String?   @db.Text
+  status_post_back Int?      @db.SmallInt
+  date_post_back   DateTime? @db.Timestamp(6)
+  postback_error   String?   @db.Text
+  
+  // Relations
+  product          Product?  @relation(fields: [id_product], references: [id_product])
+
+  @@map("campaign")
+}
+
+// Product model
+model Product {
+  id_product           BigInt      @id @default(autoincrement())
+  reference            String?     @db.VarChar(100)
+  name                 String?     @db.VarChar(500)
+  url_redirect_success String?     @db.VarChar(1000)
+  active               Int?        @db.SmallInt
+  id_customer          BigInt?
+  url_redirect_postback String?    @db.VarChar(1000)
+  method_postback      String?     @db.VarChar(20)
+  body_postback        String?     @db.VarChar(2500)
+  is_qs                Int?        @db.SmallInt
+  country              String?     @db.VarChar(10)
+  operator             String?     @db.VarChar(50)
+  random               Int?        @db.SmallInt
+  encrypted_id         String?     @db.VarChar(20)
+  
+  // Relations
+  customer             Customer?   @relation(fields: [id_customer], references: [id_customer])
+  campaigns            Campaign[]
+
+  @@map("products")
+}
+
+// Customer model
+model Customer {
+  id_customer  BigInt     @id @default(autoincrement())
+  name         String?    @db.VarChar(200)
+  active       Int?       @db.SmallInt
+  api_key      String?    @db.VarChar(100)
+  
+  // Relations
+  products     Product[]
+
+  @@map("customers")
+}
+
+// Optional: Postback logs table for detailed tracking
+model PostbackLog {
+  id              BigInt    @id @default(autoincrement())
+  campaign_id     BigInt
+  tracking_id     String    @db.VarChar(500)
+  webhook_url     String    @db.VarChar(500)
+  success         Boolean
+  response_time   Int
+  response_status Int?
+  error_message   String?   @db.Text
+  created_at      DateTime  @default(now()) @db.Timestamp(6)
+
+  @@map("postback_logs")
+  @@index([campaign_id])
+  @@index([tracking_id])
+  @@index([created_at])
+}

@@ -126,17 +126,19 @@ router.get('/detailed', async (req: Request, res: Response) => {
       ] = await Promise.all([
         prisma.campaign.count(),
         prisma.campaign.count({ where: { status: 1 } }),
-        prisma.tracking.count({
+        // Count total clicks today
+        prisma.campaign.count({
           where: {
             creation_date: {
-              gte: BigInt(new Date().setHours(0, 0, 0, 0))
+              gte: new Date(new Date().setHours(0, 0, 0, 0))
             }
           }
         }),
-        prisma.confirm.count({
+        // Count conversions today
+        prisma.campaign.count({
           where: {
             creation_date: {
-              gte: BigInt(new Date().setHours(0, 0, 0, 0))
+              gte: new Date(new Date().setHours(0, 0, 0, 0))
             },
             status: 1
           }

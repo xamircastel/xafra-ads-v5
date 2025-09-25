@@ -1,8 +1,10 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Xafra-ads v5 - Prisma Schema
+// ACTUALIZADO: Estructura exacta de la base de datos real - 22 Sept 2025
+// ¡IMPORTANTE! Este schema debe coincidir EXACTAMENTE con la BD de producción
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -10,7 +12,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Customer model - EXACTLY matches existing "customers" table
+// Customer model - Coincide EXACTAMENTE con tabla "customers"  
 model Customer {
   id_customer BigInt  @id @default(autoincrement())
   name        String? @db.VarChar(1000)
@@ -27,33 +29,31 @@ model Customer {
   @@map("customers")
 }
 
-// Auth users - Enhanced model for full Auth Service functionality
+// Auth users - Coincide EXACTAMENTE con tabla "auth_users"
 model AuthUser {
-  id_auth         BigInt    @id @default(autoincrement())
-  user_name       String?   @db.VarChar(50)
-  shared_key      String?   @db.VarChar(50)
-  api_key         String?   @db.VarChar(50)
-  active          Int?      @db.SmallInt
-  creation_date   DateTime? @default(now())
-  
-  // Additional fields for Auth Service functionality
-  customer_id     BigInt?   // Reference to customer
-  password        String?   @db.VarChar(255) // Hashed password
-  status          Int?      @db.SmallInt @default(1) // 0=inactive, 1=active, 2=suspended
-  expiration_date BigInt?   // Timestamp for API key expiration
-  description     String?   @db.VarChar(500) // Description of API key usage
-  permissions     String?   @db.VarChar(1000) // JSON string with permissions
-  login_count     Int?      @default(0) // Number of times logged in
-  last_login      BigInt?   // Last login timestamp
-  modification_date DateTime? @default(now()) // Last modification timestamp
+  id_auth           BigInt    @id @default(autoincrement())
+  user_name         String?   @db.VarChar(50)
+  shared_key        String?   @db.VarChar(50)
+  api_key           String?   @db.VarChar(50)
+  active            Int?      @db.SmallInt
+  creation_date     DateTime? @default(now())
+  customer_id       BigInt?   
+  password          String?   @db.VarChar(255)
+  status            Int?      @db.SmallInt @default(1)
+  expiration_date   DateTime?   
+  description       String?   @db.VarChar(500)
+  permissions       String?   @db.VarChar(1000)
+  login_count       Int?      @default(0)
+  last_login        DateTime?   
+  modification_date DateTime? 
 
   // Relations
-  customer        Customer? @relation(fields: [customer_id], references: [id_customer])
+  customer Customer? @relation(fields: [customer_id], references: [id_customer])
 
   @@map("auth_users")
 }
 
-// Product model - EXACTLY matches existing "products" table
+// Product model - Coincide EXACTAMENTE con tabla "products"
 model Product {
   id_product            BigInt  @id @default(autoincrement())
   reference             String? @db.VarChar(100)
@@ -68,64 +68,56 @@ model Product {
   country               String? @db.VarChar(10)
   operator              String? @db.VarChar(50)
   random                Int?    @db.SmallInt
+  encrypted_id          String? @db.VarChar(20)
 
   // Relations
-  customer  Customer? @relation(fields: [id_customer], references: [id_customer], onDelete: Cascade)
+  customer  Customer? @relation(fields: [id_customer], references: [id_customer])
   campaigns Campaign[]
 
   @@map("products")
 }
 
-// Campaign model - EXACTLY matches existing "campaign" table
+// Campaign model - Coincide EXACTAMENTE con tabla "campaign"
 model Campaign {
-  id                    BigInt    @id @default(autoincrement())
-  creation_date         DateTime? @default(now())
-  modification_date     DateTime?
-  id_product            BigInt?
-  tracking              String?   @db.VarChar(500)
-  status                Int?      @db.SmallInt
-  uuid                  String?   @db.VarChar(50)
-  status_post_back      Int?      @db.SmallInt
-  date_post_back        DateTime?
-  params                String?   @db.Text
-  xafra_tracking_id     String?   @db.VarChar(100)
-  short_tracking        String?   @db.VarChar(50)
-  country               String?   @db.VarChar(50)
-  operator              String?   @db.VarChar(50)
+  id                BigInt    @id @default(autoincrement())
+  creation_date     DateTime? @default(now())
+  modification_date DateTime?
+  id_product        BigInt?
+  tracking          String?   @db.VarChar(500)
+  status            Int?      @db.SmallInt
+  uuid              String?   @db.VarChar(50)
+  status_post_back  Int?      @db.SmallInt
+  date_post_back    DateTime?
+  params            String?   @db.Text
+  xafra_tracking_id String?   @db.VarChar(100)
+  short_tracking    String?   @db.VarChar(50)
+  country           String?   @db.VarChar(50)
+  operator          String?   @db.VarChar(50)
 
   // Relations
-  product Product? @relation(fields: [id_product], references: [id_product], onDelete: Cascade)
+  product Product? @relation(fields: [id_product], references: [id_product])
 
-  @@index([tracking])
-  @@index([short_tracking])
-  @@index([xafra_tracking_id])
-  @@index([status])
-  @@index([creation_date])
-  @@index([id_product, status])
-  @@index([country, operator])
   @@map("campaign")
 }
 
-// Ads model - EXACTLY matches existing "ads" table
+// Ads model - Coincide EXACTAMENTE con tabla "ads"
 model Ads {
-  ads_id      BigInt @id @default(autoincrement())
+  ads_id      BigInt    @id @default(autoincrement())
   ads_conf_id BigInt
   ads_def_id  BigInt
-  priority    Int?   @db.SmallInt
-  status      Int?   @db.SmallInt
+  priority    Int?      @db.SmallInt
+  status      Int?      @db.SmallInt
   cdate       DateTime? @default(now())
 
-  // Relations
-  ads_def  AdsDefinition? @relation(fields: [ads_def_id], references: [ads_def_id])
-  ads_conf AdsConfiguration? @relation(fields: [ads_conf_id], references: [ads_conf_id])
+  // Relations 
+  ads_conf AdsConf? @relation(fields: [ads_conf_id], references: [ads_conf_id])
+  ads_def  AdsDef?  @relation(fields: [ads_def_id], references: [ads_def_id])
 
-  @@index([priority])
-  @@index([status])
   @@map("ads")
 }
 
-// Ads Configuration model - EXACTLY matches existing "ads_conf" table
-model AdsConfiguration {
+// Ads Configuration model - Coincide EXACTAMENTE con tabla "ads_conf"
+model AdsConf {
   ads_conf_id BigInt    @id @default(autoincrement())
   name        String?   @db.VarChar(100)
   status      Int?      @db.SmallInt
@@ -137,8 +129,8 @@ model AdsConfiguration {
   @@map("ads_conf")
 }
 
-// Ads Definition model - EXACTLY matches existing "ads_def" table
-model AdsDefinition {
+// Ads Definition model - Coincide EXACTAMENTE con tabla "ads_def"
+model AdsDef {
   ads_def_id   BigInt    @id @default(autoincrement())
   ads_conf_id  BigInt
   product_id   BigInt
@@ -152,7 +144,7 @@ model AdsDefinition {
   @@map("ads_def")
 }
 
-// Blacklist model - EXACTLY matches existing "blacklist" table
+// Blacklist model - Coincide EXACTAMENTE con tabla "blacklist"
 model Blacklist {
   id            BigInt    @id @default(autoincrement())
   msisdn        String?   @db.VarChar(20)
@@ -160,13 +152,10 @@ model Blacklist {
   product_id    BigInt?
   type          Int?      @db.SmallInt
 
-  @@index([msisdn])
-  @@index([product_id])
-  @@index([type])
   @@map("blacklist")
 }
 
-// Xafra Campaign model - EXACTLY matches existing "xafra_campaign" table
+// Xafra Campaign model - Coincide EXACTAMENTE con tabla "xafra_campaign"
 model XafraCampaign {
   id         BigInt    @id @default(autoincrement())
   xafra_id   BigInt
@@ -177,9 +166,5 @@ model XafraCampaign {
   cdate      DateTime? @default(now())
   mdate      DateTime?
 
-  @@index([status])
-  @@index([tracking])
   @@map("xafra_campaign")
 }
-
-// NOTE: vw_ads is a VIEW, not a table - handled separately in queries

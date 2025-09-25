@@ -35,9 +35,12 @@ RUN node -e "console.log('Testing Prisma Client...'); const { PrismaClient } = r
 # PASO 8: Volver al directorio principal para el runtime
 WORKDIR /app
 
-# Variables de ambiente
+# PASO 9: Variables de ambiente
 ENV NODE_ENV=staging
 ENV PORT=8080
+ENV REDIS_HOST=127.0.0.1
+ENV REDIS_PORT=6379
+ENV REDIS_DB=0
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

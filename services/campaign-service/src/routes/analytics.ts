@@ -63,14 +63,15 @@ router.get('/performance/:campaignId', async (req: Request, res: Response) => {
     const startTimestamp = BigInt(startDate.valueOf());
     const endTimestamp = BigInt(endDate.valueOf());
 
-    // Base analytics query
+    // Base analytics query - Using campaign table with status filtering
     const [trackingData, confirmData] = await Promise.all([
-      prisma.tracking.findMany({
+      // All campaign records (clicks) for this product
+      prisma.campaign.findMany({
         where: {
-          id_campaign: campaign.id,
+          id_product: campaign.id_product,
           creation_date: {
-            gte: startTimestamp,
-            lte: endTimestamp
+            gte: new Date(Number(startTimestamp)),
+            lte: new Date(Number(endTimestamp))
           }
         },
         select: {
@@ -78,24 +79,26 @@ router.get('/performance/:campaignId', async (req: Request, res: Response) => {
           creation_date: true,
           country: true,
           operator: true,
-          ip: true,
-          user_agent: true
+          status: true,
+          params: true // This might contain user_agent and ip info
         }
       }),
-      prisma.confirm.findMany({
+      // Only confirmed campaigns (conversions) for this product
+      prisma.campaign.findMany({
         where: {
-          id_campaign: campaign.id,
+          id_product: campaign.id_product,
           creation_date: {
-            gte: startTimestamp,
-            lte: endTimestamp
+            gte: new Date(Number(startTimestamp)),
+            lte: new Date(Number(endTimestamp))
           },
-          status: 1
+          status: 1 // Only confirmed conversions
         },
         select: {
           id: true,
           creation_date: true,
           country: true,
-          operator: true
+          operator: true,
+          status: true
         }
       })
     ]);
@@ -210,42 +213,13 @@ router.get('/aggregate', async (req: Request, res: Response) => {
       campaignFilter.id = { in: campaignIdList };
     }
 
-    // Get campaigns with their analytics
+    // Get campaigns with their analytics (using simplified approach)
     const campaigns = await prisma.campaign.findMany({
       where: campaignFilter,
       include: {
         product: {
           include: {
             customer: true
-          }
-        },
-        tracking: {
-          where: {
-            creation_date: {
-              gte: startTimestamp,
-              lte: endTimestamp
-            }
-          },
-          select: {
-            id: true,
-            creation_date: true,
-            country: true,
-            operator: true
-          }
-        },
-        confirm: {
-          where: {
-            creation_date: {
-              gte: startTimestamp,
-              lte: endTimestamp
-            },
-            status: 1
-          },
-          select: {
-            id: true,
-            creation_date: true,
-            country: true,
-            operator: true
           }
         }
       }
@@ -313,51 +287,53 @@ router.get('/top-performers', async (req: Request, res: Response) => {
           include: {
             customer: true
           }
-        },
-        _count: {
-          select: {
-            tracking: {
-              where: {
-                creation_date: {
-                  gte: startTimestamp,
-                  lte: endTimestamp
-                }
-              }
-            },
-            confirm: {
-              where: {
-                creation_date: {
-                  gte: startTimestamp,
-                  lte: endTimestamp
-                },
-                status: 1
-              }
-            }
-          }
         }
       }
     });
 
-    // Calculate metrics and filter by minimum clicks
-    const campaignsWithMetrics = campaigns
-      .map(campaign => {
-        const clicks = campaign._count.tracking;
-        const conversions = campaign._count.confirm;
-        const conversionRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
+    // Calculate metrics manually for each campaign since we don't have _count
+    const campaignsWithMetrics = await Promise.all(campaigns.map(async (campaign) => {
+      // Get clicks (all campaign records for this product in date range)
+      const clicks = await prisma.campaign.count({
+        where: {
+          id_product: campaign.id_product,
+          creation_date: {
+            gte: new Date(Number(startTimestamp)),
+            lte: new Date(Number(endTimestamp))
+          }
+        }
+      });
+      
+      // Get conversions (only status=1 records for this product in date range)
+      const conversions = await prisma.campaign.count({
+        where: {
+          id_product: campaign.id_product,
+          creation_date: {
+            gte: new Date(Number(startTimestamp)),
+            lte: new Date(Number(endTimestamp))
+          },
+          status: 1
+        }
+      });
+      
+      const conversionRate = clicks > 0 ? (conversions / clicks) * 100 : 0;
 
         return {
           id: campaign.id,
           trackingId: campaign.tracking,
-          name: `${campaign.product.name} - ${campaign.country}/${campaign.operator}`,
+          name: `${campaign.product?.name} - ${campaign.country}/${campaign.operator}`,
           status: campaign.status,
-          customer: campaign.product.customer.name,
+          customer: campaign.product?.customer?.name,
           metrics: {
             clicks,
             conversions,
             conversionRate: Math.round(conversionRate * 100) / 100
           }
         };
-      })
+      }));
+    
+    // Filter by minimum clicks
+    const filteredCampaigns = campaignsWithMetrics
       .filter(campaign => campaign.metrics.clicks >= parseInt(min_clicks as string));
 
     // Sort by selected metric
@@ -444,11 +420,12 @@ router.get('/realtime/:campaignId', async (req: Request, res: Response) => {
     }
 
     const [recentTracking, recentConfirm] = await Promise.all([
-      prisma.tracking.findMany({
+      // Get all recent campaign records for this product (representing clicks)
+      prisma.campaign.findMany({
         where: {
-          id_campaign: campaign.id,
+          id_product: campaign.id_product,
           creation_date: {
-            gte: startTime
+            gte: new Date(Number(startTime))
           }
         },
         select: {
@@ -461,11 +438,12 @@ router.get('/realtime/:campaignId', async (req: Request, res: Response) => {
           creation_date: 'desc'
         }
       }),
-      prisma.confirm.findMany({
+      // Get only confirmed conversions for this product
+      prisma.campaign.findMany({
         where: {
-          id_campaign: campaign.id,
+          id_product: campaign.id_product,
           creation_date: {
-            gte: startTime
+            gte: new Date(Number(startTime))
           },
           status: 1
         },

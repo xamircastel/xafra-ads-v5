@@ -62,13 +62,13 @@ router.post('/generate', async (req: Request, res: Response) => {
       data: {
         user_name: customer.name?.substring(0, 50) || `customer_${customer_id}`,
         api_key: apikey,
-        shared_key: `cust_${customer_id}`, // Store customer_id reference here temporarily
+        shared_key: `cust_${customer_id}`,
         active: 1,
         creation_date: new Date(),
-        customer_id: customer_id, // ¡CAMPO CRÍTICO! - Asociar con el customer
+        customer_id: customer_id,
         password: hashedPassword,
         status: 1,
-        expiration_date: expires_in_days === 0 ? null : BigInt(Date.now() + (expires_in_days * 24 * 60 * 60 * 1000)),
+        expiration_date: expires_in_days === 0 ? null : new Date(Date.now() + (expires_in_days * 24 * 60 * 60 * 1000)),
         description: description || null,
         permissions: Array.isArray(permissions) ? JSON.stringify(permissions) : (permissions || null),
         login_count: 0,
@@ -147,15 +147,6 @@ router.get('/customer/:customerId', async (req: Request, res: Response) => {
     // Get API keys
     const authUsers = await prisma.authUser.findMany({
       where: whereClause,
-      include: {
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            status: true
-          }
-        }
-      },
       orderBy: {
         creation_date: 'desc'
       },
@@ -169,9 +160,9 @@ router.get('/customer/:customerId', async (req: Request, res: Response) => {
     });
 
     const apiKeys = authUsers.map(user => ({
-      authUserId: user.id,
-      username: user.username,
-      apikey: user.apikey.substring(0, 8) + '...' + user.apikey.substring(-4), // Masked
+      authUserId: user.id_auth,
+      username: user.user_name,
+      apikey: user.api_key.substring(0, 8) + '...' + user.api_key.substring(-4), // Masked
       status: user.status,
       statusText: getStatusText(user.status),
       description: user.description,
@@ -179,8 +170,7 @@ router.get('/customer/:customerId', async (req: Request, res: Response) => {
       createdAt: new Date(Number(user.creation_date)).toISOString(),
       expirationDate: user.expiration_date ? new Date(Number(user.expiration_date)).toISOString() : null,
       lastLogin: user.last_login ? new Date(Number(user.last_login)).toISOString() : null,
-      loginCount: user.login_count || 0,
-      customer: user.customer
+      loginCount: user.login_count || 0
     }));
 
     res.json({
@@ -201,32 +191,20 @@ router.get('/customer/:customerId', async (req: Request, res: Response) => {
     });
 
     res.status(500).json({
-      error: 'Failed to retrieve API keys',
+      error: 'API keys list failed',
       code: 'LIST_ERROR'
     });
   }
 });
 
-// Get API key details
-router.get('/:apikey', async (req: Request, res: Response) => {
+// Get details of a specific API key
+router.get('/details/:apikey', async (req: Request, res: Response) => {
   const { apikey } = req.params;
-  const { include_customer = 'true' } = req.query;
 
   try {
     const authUser = await prisma.authUser.findFirst({
       where: {
-        apikey: apikey
-      },
-      include: {
-        customer: include_customer === 'true' ? {
-          select: {
-            id: true,
-            name: true,
-            status: true,
-            plan: true,
-            creation_date: true
-          }
-        } : false
+        api_key: apikey
       }
     });
 
@@ -239,8 +217,8 @@ router.get('/:apikey', async (req: Request, res: Response) => {
     }
 
     const apiKeyDetails = {
-      authUserId: authUser.id,
-      username: authUser.username,
+      authUserId: authUser.id_auth,
+      username: authUser.user_name,
       apikey: apikey, // Full key since this is an authorized request
       status: authUser.status,
       statusText: getStatusText(authUser.status),
@@ -250,14 +228,11 @@ router.get('/:apikey', async (req: Request, res: Response) => {
       expirationDate: authUser.expiration_date ? new Date(Number(authUser.expiration_date)).toISOString() : null,
       lastLogin: authUser.last_login ? new Date(Number(authUser.last_login)).toISOString() : null,
       loginCount: authUser.login_count || 0,
-      isExpired: authUser.expiration_date ? BigInt(Date.now()) > authUser.expiration_date : false,
-      ...(include_customer === 'true' && authUser.customer ? {
-        customer: authUser.customer
-      } : {})
+      isExpired: authUser.expiration_date ? new Date() > authUser.expiration_date : false
     };
 
-    loggers.auth('apikey_details_retrieved', apikey.substring(0, 8) + '...', authUser.customer_id, {
-      authUserId: authUser.id,
+    loggers.auth('apikey_details_retrieved', apikey.substring(0, 8) + '...', Number(authUser.customer_id), {
+      authUserId: authUser.id_auth,
       ip: req.ip
     });
 
@@ -273,31 +248,29 @@ router.get('/:apikey', async (req: Request, res: Response) => {
     });
 
     res.status(500).json({
-      error: 'Failed to retrieve API key details',
+      error: 'API key details retrieval failed',
       code: 'DETAILS_ERROR'
     });
   }
 });
 
-// Update API key status
-router.put('/:apikey/status', async (req: Request, res: Response) => {
+// Update API key status (enable/disable)
+router.patch('/status/:apikey', async (req: Request, res: Response) => {
   const { apikey } = req.params;
-  const { status, reason } = req.body;
+  const { status } = req.body;
 
   try {
-    // Validate status
-    const validStatuses = [0, 1, 2]; // deleted, active, suspended
-    if (!validStatuses.includes(status)) {
+    if (status === undefined) {
       res.status(400).json({
-        error: 'Invalid status. Must be 0 (deleted), 1 (active), or 2 (suspended)',
-        code: 'INVALID_STATUS'
+        error: 'Status is required',
+        code: 'MISSING_STATUS'
       });
       return;
     }
 
     const authUser = await prisma.authUser.findFirst({
       where: {
-        apikey: apikey
+        api_key: apikey
       }
     });
 
@@ -309,37 +282,31 @@ router.put('/:apikey/status', async (req: Request, res: Response) => {
       return;
     }
 
-    const updatedAuthUser = await prisma.authUser.update({
+    await prisma.authUser.update({
       where: {
-        id: authUser.id
+        id_auth: authUser.id_auth
       },
       data: {
-        status: status,
-        modification_date: BigInt(Date.now())
+        status: parseInt(status as string),
+        modification_date: new Date()
       }
     });
 
-    // Clear cache
-    const cacheKey = `auth:login:${apikey}`;
-    await cache.del(cacheKey);
-
-    loggers.auth('apikey_status_updated', apikey.substring(0, 8) + '...', authUser.customer_id, {
-      authUserId: authUser.id,
+    loggers.auth('apikey_status_updated', apikey.substring(0, 8) + '...', Number(authUser.customer_id), {
+      authUserId: authUser.id_auth,
       oldStatus: authUser.status,
-      newStatus: status,
-      reason: reason || null,
+      newStatus: parseInt(status as string),
       ip: req.ip
     });
 
     res.json({
       success: true,
       data: {
-        authUserId: authUser.id,
-        apikey: apikey.substring(0, 8) + '...' + apikey.substring(-4),
+        authUserId: authUser.id_auth,
+        apikey: apikey.substring(0, 8) + '...',
         oldStatus: authUser.status,
-        newStatus: status,
-        statusText: getStatusText(status),
-        updatedAt: new Date(Number(updatedAuthUser.modification_date || updatedAuthUser.creation_date)).toISOString()
+        newStatus: parseInt(status as string),
+        statusText: getStatusText(parseInt(status as string))
       }
     });
 
@@ -351,24 +318,20 @@ router.put('/:apikey/status', async (req: Request, res: Response) => {
     });
 
     res.status(500).json({
-      error: 'Failed to update API key status',
+      error: 'API key status update failed',
       code: 'STATUS_UPDATE_ERROR'
     });
   }
 });
 
 // Regenerate API key
-router.post('/:apikey/regenerate', async (req: Request, res: Response) => {
+router.post('/regenerate/:apikey', async (req: Request, res: Response) => {
   const { apikey } = req.params;
-  const { keep_old_key_hours = 0 } = req.body;
 
   try {
     const authUser = await prisma.authUser.findFirst({
       where: {
-        apikey: apikey
-      },
-      include: {
-        customer: true
+        api_key: apikey
       }
     });
 
@@ -380,37 +343,30 @@ router.post('/:apikey/regenerate', async (req: Request, res: Response) => {
       return;
     }
 
-    // Generate new API key
     const newApikey = generateApiKey();
 
-    const updatedAuthUser = await prisma.authUser.update({
+    await prisma.authUser.update({
       where: {
-        id: authUser.id
+        id_auth: authUser.id_auth
       },
       data: {
-        apikey: newApikey,
-        modification_date: BigInt(Date.now())
+        api_key: newApikey,
+        modification_date: new Date()
       }
     });
 
-    // Clear old cache
-    await cache.del(`auth:login:${apikey}`);
-
-    loggers.auth('apikey_regenerated', newApikey.substring(0, 8) + '...', authUser.customer_id, {
-      authUserId: authUser.id,
+    loggers.auth('apikey_regenerated', newApikey.substring(0, 8) + '...', Number(authUser.customer_id), {
+      authUserId: authUser.id_auth,
       oldApikey: apikey.substring(0, 8) + '...',
-      newApikey: newApikey.substring(0, 8) + '...',
       ip: req.ip
     });
 
     res.json({
       success: true,
       data: {
-        authUserId: authUser.id,
-        newApikey: newApikey,
-        oldApikey: apikey.substring(0, 8) + '...' + apikey.substring(-4),
-        regeneratedAt: new Date(Number(updatedAuthUser.modification_date || updatedAuthUser.creation_date)).toISOString(),
-        message: 'API key regenerated successfully. Update your applications to use the new key.'
+        authUserId: authUser.id_auth,
+        oldApikey: apikey.substring(0, 8) + '...',
+        newApikey: newApikey
       }
     });
 
@@ -421,7 +377,7 @@ router.post('/:apikey/regenerate', async (req: Request, res: Response) => {
     });
 
     res.status(500).json({
-      error: 'Failed to regenerate API key',
+      error: 'API key regeneration failed',
       code: 'REGENERATION_ERROR'
     });
   }
@@ -429,20 +385,22 @@ router.post('/:apikey/regenerate', async (req: Request, res: Response) => {
 
 // Helper functions
 function generateApiKey(): string {
-  const prefix = 'xafra_';
-  const timestamp = Date.now().toString(36);
-  const randomBytes = crypto.randomBytes(16).toString('hex');
-  return prefix + timestamp + '_' + randomBytes;
+  return crypto.randomBytes(32).toString('hex');
 }
 
 async function hashPassword(password: string): Promise<string> {
-  const bcrypt = require('bcryptjs');
-  return await bcrypt.hash(password, 12);
+  const salt = crypto.randomBytes(16).toString('hex');
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(password, salt, 1000, 64, 'sha512', (err, derivedKey) => {
+      if (err) reject(err);
+      resolve(salt + ':' + derivedKey.toString('hex'));
+    });
+  });
 }
 
 function getStatusText(status: number): string {
   switch (status) {
-    case 0: return 'deleted';
+    case 0: return 'inactive';
     case 1: return 'active';
     case 2: return 'suspended';
     default: return 'unknown';

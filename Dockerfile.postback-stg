@@ -25,7 +25,8 @@ COPY tsconfig.json ./
 RUN npm run build -w @xafra/shared
 RUN npm run build -w @xafra/database
 
-# Generate Prisma client with proper schema path
+# Generate Prisma client with proper schema path and binary targets
+ENV PRISMA_CLI_BINARY_TARGETS="linux-musl-openssl-3.0.x"
 RUN npx prisma generate --schema=packages/database/prisma/schema.prisma
 
 # Build postback-service
@@ -67,5 +68,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
-# Dynamic command to handle different TypeScript output structures
-CMD ["sh", "-c", "find dist -name 'index.js' -type f | head -1 | xargs node"]
+# Start the postback service
+CMD ["node", "dist/services/postback-service/src/index.js"]

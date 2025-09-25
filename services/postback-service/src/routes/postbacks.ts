@@ -1,446 +1,307 @@
 import { Router, Request, Response } from 'express';
-import axios from 'axios';
-import { createHash, createHmac } from 'crypto';
+import { dbService } from '../utils/database.js';
+import { redisService } from '../utils/redis.js';
+import { PostbackProcessor, PostbackRequest, PostbackResponse } from '../utils/postback-processor.js';
+
+// Helper function to convert BigInt to number
+function convertBigIntToNumber(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'bigint') return Number(obj);
+  if (Array.isArray(obj)) return obj.map(convertBigIntToNumber);
+  if (typeof obj === 'object') {
+    const converted: any = {};
+    for (const key in obj) {
+      converted[key] = convertBigIntToNumber(obj[key]);
+    }
+    return converted;
+  }
+  return obj;
+}
 
 const router = Router();
 
-// Send postback notification
+// Send postback notification - MAIN ENDPOINT
 router.post('/send', async (req: Request, res: Response) => {
-  const { 
-    campaign_id,
-    tracking_id,
-    conversion_id,
-    webhook_url,
-    postback_parameters,
-    authentication,
-    retry_config,
-    priority = 'normal'
-  } = req.body;
-
+  const startTime = Date.now();
+  
   try {
+    const postbackRequest: PostbackRequest = req.body;
+    
     // Validate required parameters
-    if (!campaign_id || !tracking_id || !webhook_url) {
+    const validation = validatePostbackRequest(postbackRequest);
+    if (!validation.valid) {
       res.status(400).json({
-        error: 'Missing required parameters: campaign_id, tracking_id, webhook_url',
-        code: 'MISSING_REQUIRED_PARAMETERS'
+        success: false,
+        error: validation.error,
+        code: 'INVALID_REQUEST'
       });
       return;
     }
 
-    // Validate webhook URL
-    try {
-      new URL(webhook_url);
-    } catch (urlError) {
+    const {
+      campaign_id,
+      tracking_id,
+      webhook_url,
+      postback_parameters,
+      priority = 'normal'
+    } = postbackRequest;
+
+    // Generate conversion ID if not provided
+    const conversion_id = postbackRequest.conversion_id || 
+      PostbackProcessor.generateConversionId(campaign_id, tracking_id);
+
+    console.log(`📤 Processing postback for campaign ${campaign_id}, tracking: ${tracking_id}`);
+
+    // Get campaign and product data from database
+    const campaignData = await dbService.getCampaignWithProduct(campaign_id) as any[];
+    
+    if (!campaignData || campaignData.length === 0) {
+      res.status(404).json({
+        success: false,
+        error: 'Campaign not found',
+        code: 'CAMPAIGN_NOT_FOUND'
+      });
+      return;
+    }
+
+    const campaign = convertBigIntToNumber(campaignData[0]);
+    const method = (postback_parameters.method || campaign.method_postback || 'GET').toUpperCase();
+
+    // Log method determination
+    console.log(`🔧 Method determined:`, {
+      requested_method: postback_parameters.method,
+      campaign_method: campaign.method_postback,
+      final_method: method,
+      source: postback_parameters.method ? 'request_parameter' : 
+              campaign.method_postback ? 'campaign_config' : 'default'
+    });
+
+    // Process dynamic URL with tracking replacement
+    const processedUrl = PostbackProcessor.processWebhookUrl(webhook_url, tracking_id);
+    
+    // Validate processed URL
+    const urlValidation = PostbackProcessor.validateWebhookUrl(processedUrl);
+    if (!urlValidation.valid) {
       res.status(400).json({
-        error: 'Invalid webhook URL format',
+        success: false,
+        error: `Invalid webhook URL: ${urlValidation.error}`,
         code: 'INVALID_WEBHOOK_URL'
       });
       return;
     }
 
-    // Build postback payload
-    const postbackData = buildPostbackPayload({
+    // Prepare postback data
+    const postbackData = {
       campaign_id,
       tracking_id,
       conversion_id,
-      postback_parameters,
-      timestamp: Date.now()
-    });
-
-    // Add authentication if provided
-    const headers: any = {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Xafra-Postback-Service/1.0'
+      customer_id: postback_parameters.customer_id,
+      customer_name: postback_parameters.customer_name,
+      product_id: postback_parameters.product_id,
+      product_name: postback_parameters.product_name,
+      original_tracking: postback_parameters.original_tracking,
+      short_tracking: postback_parameters.short_tracking,
+      tracking_used: postback_parameters.tracking_used,
+      is_kolbi_confirmation: postback_parameters.is_kolbi_confirmation,
+      confirmed_at: postback_parameters.confirmed_at,
+      country: postback_parameters.country || 'CR',
+      operator: postback_parameters.operator || 'KOLBI'
     };
 
-    if (authentication) {
-      if (authentication.type === 'bearer') {
-        headers['Authorization'] = `Bearer ${authentication.token}`;
-      } else if (authentication.type === 'api_key') {
-        headers['X-API-Key'] = authentication.key;
-      } else if (authentication.type === 'hmac') {
-        const signature = generateHmacSignature(postbackData, authentication.secret);
-        headers['X-Signature'] = signature;
-      }
+    // Process body template if provided
+    let finalPostbackData = postbackData;
+    if (method === 'POST' && (postback_parameters.body_template || campaign.body_postback)) {
+      finalPostbackData = PostbackProcessor.processBodyTemplate(
+        postback_parameters.body_template || campaign.body_postback,
+        tracking_id,
+        postbackData
+      );
     }
 
-    // Send postback
-    const startTime = Date.now();
-    let response;
-    let success = false;
-    let error_message = null;
-
-    try {
-      response = await axios.post(webhook_url, postbackData, {
-        headers,
-        timeout: 30000, // 30 seconds timeout
-        validateStatus: (status) => status >= 200 && status < 400
-      });
-      success = true;
-    } catch (httpError: any) {
-      error_message = httpError.response ? 
-        `HTTP ${httpError.response.status}: ${httpError.response.statusText}` :
-        httpError.message;
-      success = false;
-    }
+    // Send the postback
+    const result = await PostbackProcessor.sendPostback({
+      url: processedUrl,
+      method: method as 'GET' | 'POST',
+      data: finalPostbackData,
+      timeout: 30000
+    });
 
     const responseTime = Date.now() - startTime;
 
-    // Log the postback attempt
-    const logData = {
+    // Log the attempt to database
+    await dbService.logPostbackAttempt({
       campaign_id,
       tracking_id,
-      conversion_id,
-      webhook_url,
-      success,
-      response_time: responseTime,
-      response_status: response?.status || null,
-      error_message,
-      timestamp: new Date().toISOString(),
-      priority
-    };
+      webhook_url: processedUrl,
+      success: result.success,
+      response_time: result.responseTime,
+      response_status: result.statusCode,
+      error_message: result.error
+    });
 
-    console.log('Postback attempt:', logData);
+    // Update campaign status in database
+    const campaignStatus = result.success ? 1 : 2; // 1 = success, 2 = failed
+    await dbService.updateCampaignPostbackStatus(
+      campaign_id, 
+      campaignStatus, 
+      result.error
+    );
 
-    // Schedule retry if failed and retry config provided
-    if (!success && retry_config && retry_config.enabled) {
-      await scheduleRetry({
-        ...req.body,
+    // If failed and retries enabled, schedule retry
+    let retryScheduled = false;
+    let nextRetry;
+    
+    if (!result.success && priority !== 'low') {
+      const retryDelay = PostbackProcessor.calculateRetryDelay(1);
+      
+      const retryData = {
+        ...postbackRequest,
         attempt_count: 1,
-        last_error: error_message,
-        next_retry: calculateNextRetry(1, retry_config)
-      });
+        last_error: result.error,
+        original_url: webhook_url,
+        processed_url: processedUrl,
+        method,
+        postback_data: finalPostbackData
+      };
+
+      retryScheduled = await redisService.addToRetryQueue(retryData, retryDelay);
+      if (retryScheduled) {
+        nextRetry = new Date(Date.now() + retryDelay).toISOString();
+      }
     }
 
-    res.json({
-      success,
+    // Cache result for quick access
+    await redisService.cachePostbackResult(campaign_id, {
+      success: result.success,
+      timestamp: new Date().toISOString(),
+      response_time: result.responseTime,
+      status_code: result.statusCode
+    });
+
+    // Prepare response
+    const response: PostbackResponse = {
+      success: result.success,
       data: {
         campaign_id,
         tracking_id,
         conversion_id,
-        webhook_url: maskUrl(webhook_url),
-        response_time: responseTime,
-        response_status: response?.status || null,
+        webhook_url: PostbackProcessor.maskUrl(processedUrl),
+        response_time: result.responseTime,
+        response_status: result.statusCode,
         timestamp: new Date().toISOString(),
-        ...(error_message ? { error_message } : {}),
-        ...(retry_config && !success ? { 
+        ...(result.error ? { error_message: result.error } : {}),
+        ...(retryScheduled ? { 
           retry_scheduled: true,
-          next_retry: calculateNextRetry(1, retry_config)
+          next_retry: nextRetry
         } : {})
       }
-    });
+    };
+
+    console.log(`${result.success ? '✅' : '❌'} Postback ${result.success ? 'sent successfully' : 'failed'} for campaign ${campaign_id}`);
+
+    res.json(response);
 
   } catch (error) {
-    console.error('Postback sending failed:', error);
+    const responseTime = Date.now() - startTime;
+    console.error('❌ Postback processing failed:', error);
 
     res.status(500).json({
-      error: 'Failed to send postback',
-      code: 'POSTBACK_SEND_ERROR',
+      success: false,
+      error: 'Internal server error',
+      code: 'POSTBACK_PROCESSING_ERROR',
+      response_time: responseTime,
       timestamp: new Date().toISOString()
     });
   }
 });
 
-// Bulk postback sending
-router.post('/send-bulk', async (req: Request, res: Response) => {
-  const { postbacks, max_concurrent = 5 } = req.body;
-
-  try {
-    if (!Array.isArray(postbacks) || postbacks.length === 0) {
-      res.status(400).json({
-        error: 'Postbacks array is required and must not be empty',
-        code: 'INVALID_POSTBACKS_ARRAY'
-      });
-      return;
-    }
-
-    const results = [];
-    const batches = chunkArray(postbacks, max_concurrent);
-
-    for (const batch of batches) {
-      const batchPromises = batch.map(async (postback: any) => {
-        try {
-          // Create a mock request for the single postback endpoint
-          const mockReq = {
-            body: postback
-          };
-          
-          const mockRes = {
-            status: (code: number) => mockRes,
-            json: (data: any) => data
-          };
-
-          // Process each postback (simplified version)
-          const result = await processSinglePostback(postback);
-          return {
-            campaign_id: postback.campaign_id,
-            tracking_id: postback.tracking_id,
-            success: result.success,
-            response_time: result.response_time,
-            error_message: result.error_message || null
-          };
-        } catch (error) {
-          return {
-            campaign_id: postback.campaign_id,
-            tracking_id: postback.tracking_id,
-            success: false,
-            error_message: error instanceof Error ? error.message : 'Unknown error'
-          };
-        }
-      });
-
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
-    }
-
-    const successCount = results.filter(r => r.success).length;
-    const failureCount = results.length - successCount;
-
-    res.json({
-      success: true,
-      data: {
-        total_postbacks: postbacks.length,
-        successful: successCount,
-        failed: failureCount,
-        success_rate: Math.round((successCount / postbacks.length) * 10000) / 100,
-        results,
-        processed_at: new Date().toISOString()
-      }
-    });
-
-  } catch (error) {
-    console.error('Bulk postback sending failed:', error);
-
-    res.status(500).json({
-      error: 'Failed to send bulk postbacks',
-      code: 'BULK_POSTBACK_ERROR'
-    });
+// Validate postback request
+function validatePostbackRequest(request: any): { valid: boolean; error?: string } {
+  if (!request) {
+    return { valid: false, error: 'Request body is required' };
   }
-});
 
-// Get postback status/history
+  const required = ['campaign_id', 'tracking_id', 'webhook_url', 'postback_parameters'];
+  
+  for (const field of required) {
+    if (!request[field]) {
+      return { valid: false, error: `Missing required field: ${field}` };
+    }
+  }
+
+  if (typeof request.campaign_id !== 'number') {
+    return { valid: false, error: 'campaign_id must be a number' };
+  }
+
+  if (typeof request.tracking_id !== 'string') {
+    return { valid: false, error: 'tracking_id must be a string' };
+  }
+
+  if (typeof request.webhook_url !== 'string') {
+    return { valid: false, error: 'webhook_url must be a string' };
+  }
+
+  if (!request.postback_parameters || typeof request.postback_parameters !== 'object') {
+    return { valid: false, error: 'postback_parameters must be an object' };
+  }
+
+  return { valid: true };
+}
+
+// Get postback status by tracking ID - SIMPLIFIED
 router.get('/status/:tracking_id', async (req: Request, res: Response) => {
   const { tracking_id } = req.params;
-  const { limit = '10', offset = '0' } = req.query;
 
   try {
-    // In a real implementation, this would query a postback_logs table
-    // For now, return mock status data
-    const mockStatus = {
-      tracking_id,
-      campaign_id: 123,
-      conversion_id: 456,
-      postback_attempts: [
-        {
-          attempt: 1,
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          success: false,
-          error_message: 'Connection timeout',
-          response_time: 30000
-        },
-        {
-          attempt: 2,
-          timestamp: new Date(Date.now() - 1800000).toISOString(),
-          success: true,
-          response_status: 200,
-          response_time: 1250
-        }
-      ],
-      current_status: 'delivered',
-      total_attempts: 2,
-      last_attempt: new Date(Date.now() - 1800000).toISOString(),
-      webhook_url: 'https://example.com/postback'
-    };
+    // Get cached result first
+    const campaignsRaw = await dbService.executeQuery(`
+      SELECT 
+        c.id as campaign_id,
+        c.tracking,
+        c.status_post_back,
+        c.date_post_back,
+        p.url_redirect_postback
+      FROM {schema}.campaign c
+      LEFT JOIN {schema}.products p ON c.id_product = p.id_product
+      WHERE c.tracking = $1
+      ORDER BY c.creation_date DESC
+      LIMIT 5
+    `, [tracking_id]) as any[];
 
-    res.json({
-      success: true,
-      data: mockStatus
-    });
+    const campaigns = convertBigIntToNumber(campaignsRaw);
 
-  } catch (error) {
-    console.error('Postback status retrieval failed:', error);
-
-    res.status(500).json({
-      error: 'Failed to retrieve postback status',
-      code: 'POSTBACK_STATUS_ERROR'
-    });
-  }
-});
-
-// Test webhook endpoint
-router.post('/test-webhook', async (req: Request, res: Response) => {
-  const { webhook_url, authentication, test_data } = req.body;
-
-  try {
-    if (!webhook_url) {
-      res.status(400).json({
-        error: 'Webhook URL is required',
-        code: 'MISSING_WEBHOOK_URL'
+    if (!campaigns || campaigns.length === 0) {
+      res.status(404).json({
+        success: false,
+        error: 'No campaigns found for tracking ID',
+        code: 'TRACKING_NOT_FOUND'
       });
       return;
     }
 
-    // Build test payload
-    const testPayload = test_data || {
-      test: true,
-      campaign_id: 'test_campaign',
-      tracking_id: 'test_tracking',
-      conversion_id: 'test_conversion',
-      timestamp: Date.now(),
-      message: 'This is a test postback from Xafra Ads'
-    };
-
-    // Setup headers
-    const headers: any = {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Xafra-Postback-Service/1.0 (Test)'
-    };
-
-    if (authentication) {
-      if (authentication.type === 'bearer') {
-        headers['Authorization'] = `Bearer ${authentication.token}`;
-      } else if (authentication.type === 'api_key') {
-        headers['X-API-Key'] = authentication.key;
-      }
-    }
-
-    // Send test request
-    const startTime = Date.now();
-    let testResult;
-
-    try {
-      const response = await axios.post(webhook_url, testPayload, {
-        headers,
-        timeout: 15000,
-        validateStatus: () => true // Accept any status for testing
-      });
-
-      testResult = {
-        success: response.status >= 200 && response.status < 400,
-        status_code: response.status,
-        response_time: Date.now() - startTime,
-        response_headers: response.headers,
-        response_data: response.data,
-        error_message: response.status >= 400 ? `HTTP ${response.status}` : null
-      };
-    } catch (error: any) {
-      testResult = {
-        success: false,
-        response_time: Date.now() - startTime,
-        error_message: error.code === 'ECONNABORTED' ? 'Request timeout' : error.message
-      };
-    }
-
+    const latestCampaign = campaigns[0];
+    
     res.json({
       success: true,
       data: {
-        webhook_url: maskUrl(webhook_url),
-        test_payload: testPayload,
-        test_result: testResult,
-        tested_at: new Date().toISOString()
+        tracking_id,
+        campaign_id: latestCampaign.campaign_id,
+        current_status: latestCampaign.status_post_back === 1 ? 'delivered' : 
+                       latestCampaign.status_post_back === 2 ? 'failed' : 'pending',
+        last_attempt: latestCampaign.date_post_back,
+        webhook_url: PostbackProcessor.maskUrl(latestCampaign.url_redirect_postback || ''),
+        total_campaigns: campaigns.length
       }
     });
 
   } catch (error) {
-    console.error('Webhook test failed:', error);
-
+    console.error('Failed to get postback status:', error);
     res.status(500).json({
-      error: 'Failed to test webhook',
-      code: 'WEBHOOK_TEST_ERROR'
+      success: false,
+      error: 'Failed to retrieve postback status',
+      code: 'STATUS_RETRIEVAL_ERROR'
     });
   }
 });
-
-// Helper functions
-function buildPostbackPayload(data: any) {
-  const basePayload = {
-    campaign_id: data.campaign_id,
-    tracking_id: data.tracking_id,
-    conversion_id: data.conversion_id,
-    timestamp: data.timestamp,
-    source: 'xafra_ads_v5'
-  };
-
-  // Merge custom parameters
-  if (data.postback_parameters) {
-    Object.assign(basePayload, data.postback_parameters);
-  }
-
-  return basePayload;
-}
-
-function generateHmacSignature(data: any, secret: string): string {
-  const payload = typeof data === 'string' ? data : JSON.stringify(data);
-  return createHmac('sha256', secret).update(payload).digest('hex');
-}
-
-function maskUrl(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    return `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}***`;
-  } catch {
-    return 'invalid_url';
-  }
-}
-
-function chunkArray<T>(array: T[], size: number): T[][] {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
-
-async function processSinglePostback(postback: any) {
-  const startTime = Date.now();
-  
-  try {
-    const headers: any = {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Xafra-Postback-Service/1.0'
-    };
-
-    const postbackData = buildPostbackPayload(postback);
-    
-    const response = await axios.post(postback.webhook_url, postbackData, {
-      headers,
-      timeout: 30000,
-      validateStatus: (status) => status >= 200 && status < 400
-    });
-
-    return {
-      success: true,
-      response_time: Date.now() - startTime,
-      response_status: response.status
-    };
-  } catch (error: any) {
-    return {
-      success: false,
-      response_time: Date.now() - startTime,
-      error_message: error.response ? 
-        `HTTP ${error.response.status}` : 
-        error.message
-    };
-  }
-}
-
-function calculateNextRetry(attemptCount: number, retryConfig: any): string {
-  const baseDelay = retryConfig.initial_delay || 60000; // 1 minute default
-  const backoffMultiplier = retryConfig.backoff_multiplier || 2;
-  const maxDelay = retryConfig.max_delay || 3600000; // 1 hour max
-
-  const delay = Math.min(baseDelay * Math.pow(backoffMultiplier, attemptCount - 1), maxDelay);
-  return new Date(Date.now() + delay).toISOString();
-}
-
-async function scheduleRetry(retryData: any) {
-  // In a real implementation, this would add to a retry queue
-  console.log('Retry scheduled:', {
-    campaign_id: retryData.campaign_id,
-    tracking_id: retryData.tracking_id,
-    attempt_count: retryData.attempt_count,
-    next_retry: retryData.next_retry
-  });
-}
 
 export default router;

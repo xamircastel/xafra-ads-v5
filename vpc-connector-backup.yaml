@@ -1,0 +1,11 @@
+connectedProjects:
+- xafra-ads
+ipCidrRange: 10.8.0.0/28
+machineType: e2-micro
+maxInstances: 10
+maxThroughput: 1000
+minInstances: 2
+minThroughput: 200
+name: projects/xafra-ads/locations/us-central1/connectors/xafra-vpc-connector
+network: default
+state: READY

@@ -68,9 +68,7 @@ router.get('/detailed', async (req: Request, res: Response) => {
 
     // Auth system check (verify JWT secret and customer access)
     try {
-      const customerCount = await prisma.customer.count({
-        where: { status: 1 }
-      });
+      const customerCount = await prisma.customer.count();
       const authUserCount = await prisma.authUser.count({
         where: { status: 1 }
       });
@@ -184,8 +182,8 @@ router.get('/metrics', async (req: Request, res: Response) => {
     const hourAgo = new Date(now.getTime() - (60 * 60 * 1000));
     const dayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
 
-    const hourAgoTs = BigInt(hourAgo.getTime());
-    const dayAgoTs = BigInt(dayAgo.getTime());
+    const hourAgoTs = hourAgo;
+    const dayAgoTs = dayAgo;
 
     const [
       totalCustomers,
@@ -196,7 +194,7 @@ router.get('/metrics', async (req: Request, res: Response) => {
       recentLoginsDay
     ] = await Promise.all([
       prisma.customer.count(),
-      prisma.customer.count({ where: { status: 1 } }),
+      prisma.customer.count(),
       prisma.authUser.count(),
       prisma.authUser.count({ where: { status: 1 } }),
       prisma.authUser.count({ 

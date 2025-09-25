@@ -21,9 +21,8 @@ router.get('/:campaignId', async (req: Request, res: Response) => {
           include: {
             customer: {
               select: {
-                id: true,
-                name: true,
-                status: true
+                id_customer: true,
+                name: true
               }
             }
           }
@@ -79,12 +78,12 @@ router.get('/:campaignId', async (req: Request, res: Response) => {
       postbackStatus: campaign.status_post_back,
       postbackDate: campaign.date_post_back ? new Date(Number(campaign.date_post_back)).toISOString() : null,
       product: {
-        id: campaign.product.id,
-        name: campaign.product.name,
-        url: campaign.product.url,
-        country: campaign.product.country,
-        operator: campaign.product.operator,
-        customer: campaign.product.customer
+        id: campaign.product?.id_product,
+        name: campaign.product?.name,
+        url: campaign.product?.url_redirect_success,
+        country: campaign.product?.country,
+        operator: campaign.product?.operator,
+        customer: campaign.product?.customer
       },
       urls: {
         standard: `${process.env['BASE_URL']}/ads/${campaign.tracking}`,
@@ -93,23 +92,49 @@ router.get('/:campaignId', async (req: Request, res: Response) => {
       }
     };
 
-    if (include_stats === 'true' && campaign._count) {
+    if (include_stats === 'true') {
+      // Obtener estadísticas correctas usando campo status
+      const totalClicks = await prisma.campaign.count({
+        where: { id_product: campaign.id_product }
+      });
+      
+      const totalConversions = await prisma.campaign.count({
+        where: { 
+          id_product: campaign.id_product,
+          status: 1 // Solo confirmadas como ventas
+        }
+      });
+      
       campaignData.stats = {
-        totalClicks: campaign._count.tracking,
-        totalConversions: campaign._count.confirm,
-        conversionRate: campaign._count.tracking > 0 
-          ? Math.round((campaign._count.confirm / campaign._count.tracking) * 10000) / 100 
+        totalClicks,
+        totalConversions,
+        conversionRate: totalClicks > 0 
+          ? Math.round((totalConversions / totalClicks) * 10000) / 100 
           : 0
       };
     }
 
-    if (include_tracking === 'true' && campaign.tracking) {
-      campaignData.recentTracking = campaign.tracking.map(track => ({
+    if (include_tracking === 'true') {
+      // Obtener registros recientes de campaign para este producto
+      const recentTracking = await prisma.campaign.findMany({
+        where: { id_product: campaign.id_product },
+        select: {
+          id: true,
+          creation_date: true,
+          country: true,
+          operator: true,
+          status: true
+        },
+        orderBy: { creation_date: 'desc' },
+        take: 10
+      });
+      
+      campaignData.recentTracking = recentTracking.map(track => ({
         id: track.id,
-        timestamp: new Date(Number(track.creation_date)).toISOString(),
+        timestamp: track.creation_date?.toISOString(),
         country: track.country,
         operator: track.operator,
-        ip: track.ip
+        status: track.status
       }));
     }
 
@@ -198,23 +223,12 @@ router.get('/', async (req: Request, res: Response) => {
             include: {
               customer: {
                 select: {
-                  id: true,
-                  name: true,
-                  status: true
+                  id_customer: true,
+                  name: true
                 }
               }
             }
-          },
-          ...(include_stats === 'true' ? {
-            _count: {
-              select: {
-                tracking: true,
-                confirm: {
-                  where: { status: 1 }
-                }
-              }
-            }
-          } : {})
+          }
         },
         orderBy,
         take: parseInt(limit as string),
@@ -222,6 +236,35 @@ router.get('/', async (req: Request, res: Response) => {
       }),
       prisma.campaign.count({ where: whereClause })
     ]);
+
+    // Calcular estadísticas si se solicitan
+    let campaignStats = {};
+    if (include_stats === 'true') {
+      // Para el listado, obtener stats agregadas por producto
+      const productIds = [...new Set(campaigns.map(c => c.id_product))];
+      const statsPromises = productIds.map(async (productId) => {
+        const [totalClicks, totalConversions] = await Promise.all([
+          prisma.campaign.count({ where: { id_product: productId } }),
+          prisma.campaign.count({ where: { id_product: productId, status: 1 } })
+        ]);
+        return {
+          productId,
+          totalClicks,
+          totalConversions,
+          conversionRate: totalClicks > 0 ? Math.round((totalConversions / totalClicks) * 10000) / 100 : 0
+        };
+      });
+      
+      const statsResults = await Promise.all(statsPromises);
+      campaignStats = statsResults.reduce((acc, stat) => {
+        acc[stat.productId.toString()] = {
+          totalClicks: stat.totalClicks,
+          totalConversions: stat.totalConversions,
+          conversionRate: stat.conversionRate
+        };
+        return acc;
+      }, {} as any);
+    }
 
     const campaignList = campaigns.map(campaign => ({
       id: campaign.id,
@@ -233,21 +276,15 @@ router.get('/', async (req: Request, res: Response) => {
       statusText: getCampaignStatusText(campaign.status),
       country: campaign.country,
       operator: campaign.operator,
-      createdAt: new Date(Number(campaign.creation_date)).toISOString(),
-      modifiedAt: new Date(Number(campaign.modification_date)).toISOString(),
+      createdAt: campaign.creation_date?.toISOString(),
+      modifiedAt: campaign.modification_date?.toISOString(),
       product: {
-        id: campaign.product.id,
-        name: campaign.product.name,
-        customer: campaign.product.customer
+        id: campaign.product?.id_product,
+        name: campaign.product?.name,
+        customer: campaign.product?.customer
       },
-      ...(include_stats === 'true' && campaign._count ? {
-        stats: {
-          totalClicks: campaign._count.tracking,
-          totalConversions: campaign._count.confirm,
-          conversionRate: campaign._count.tracking > 0 
-            ? Math.round((campaign._count.confirm / campaign._count.tracking) * 10000) / 100 
-            : 0
-        }
+      ...(include_stats === 'true' && campaignStats[campaign.id_product?.toString()] ? {
+        stats: campaignStats[campaign.id_product?.toString()]
       } : {})
     }));
 
@@ -317,7 +354,7 @@ router.put('/:campaignId/status', async (req: Request, res: Response) => {
       },
       data: {
         status: status,
-        modification_date: BigInt(Date.now())
+        modification_date: new Date()
       }
     });
 
@@ -332,12 +369,12 @@ router.put('/:campaignId/status', async (req: Request, res: Response) => {
       await cache.del(key);
     }
 
-    loggers.tracking('campaign_status_updated', campaign.tracking, campaign.id_product, {
+    loggers.tracking('campaign_status_updated', campaign.tracking, Number(campaign.id_product), {
       campaignId: campaign.id,
       oldStatus: campaign.status,
       newStatus: status,
       reason: reason || null,
-      customerId: campaign.product.customer_id,
+      customerId: campaign.product?.customer?.id_customer,
       ip: req.ip
     });
 
@@ -351,7 +388,7 @@ router.put('/:campaignId/status', async (req: Request, res: Response) => {
         statusText: getCampaignStatusText(status),
         updatedAt: new Date(Number(updatedCampaign.modification_date)).toISOString(),
         product: {
-          id: campaign.product.id,
+          id: campaign.product?.id_product,
           name: campaign.product.name,
           customer: campaign.product.customer.name
         }
@@ -392,7 +429,7 @@ router.put('/:campaignId/postback', async (req: Request, res: Response) => {
       return;
     }
 
-    const postbackDate = date ? BigInt(new Date(date).getTime()) : BigInt(Date.now());
+    const postbackDate = date ? new Date(date) : new Date();
 
     const updatedCampaign = await prisma.campaign.update({
       where: {
@@ -401,11 +438,11 @@ router.put('/:campaignId/postback', async (req: Request, res: Response) => {
       data: {
         status_post_back: status,
         date_post_back: postbackDate,
-        modification_date: BigInt(Date.now())
+        modification_date: new Date()
       }
     });
 
-    loggers.tracking('campaign_postback_updated', campaign.tracking, campaign.id_product, {
+    loggers.tracking('campaign_postback_updated', campaign.tracking, Number(campaign.id_product), {
       campaignId: campaign.id,
       oldPostbackStatus: campaign.status_post_back,
       newPostbackStatus: status,
@@ -474,10 +511,10 @@ router.delete('/:campaignId', async (req: Request, res: Response) => {
         }
       });
 
-      loggers.tracking('campaign_deleted_permanent', campaign.tracking, campaign.id_product, {
+      loggers.tracking('campaign_deleted_permanent', campaign.tracking, Number(campaign.id_product), {
         campaignId: campaign.id,
         reason: reason || null,
-        customerId: campaign.product.customer_id,
+        customerId: campaign.product?.customer?.id_customer,
         ip: req.ip
       });
 
@@ -499,14 +536,14 @@ router.delete('/:campaignId', async (req: Request, res: Response) => {
         },
         data: {
           status: 0,
-          modification_date: BigInt(Date.now())
+          modification_date: new Date()
         }
       });
 
-      loggers.tracking('campaign_deleted_soft', campaign.tracking, campaign.id_product, {
+      loggers.tracking('campaign_deleted_soft', campaign.tracking, Number(campaign.id_product), {
         campaignId: campaign.id,
         reason: reason || null,
-        customerId: campaign.product.customer_id,
+        customerId: campaign.product?.customer?.id_customer,
         ip: req.ip
       });
 
@@ -573,7 +610,7 @@ router.post('/bulk', async (req: Request, res: Response) => {
       // Build where clause from filters
       const whereClause: any = {};
       
-      if (filters.customer_id) whereClause.product = { customer_id: filters.customer_id };
+      if (filters.customer_id) whereClause.product = { id_customer: filters.customer_id };
       if (filters.product_id) whereClause.id_product = filters.product_id;
       if (filters.status !== undefined) whereClause.status = filters.status;
       if (filters.country) whereClause.country = filters.country;
@@ -584,7 +621,7 @@ router.post('/bulk', async (req: Request, res: Response) => {
         select: { id: true }
       });
 
-      targetCampaigns = campaigns.map(c => c.id);
+      targetCampaigns = campaigns.map(c => Number(c.id));
     }
 
     if (targetCampaigns.length === 0) {
@@ -613,7 +650,7 @@ router.post('/bulk', async (req: Request, res: Response) => {
           },
           data: {
             status: data.status,
-            modification_date: BigInt(Date.now())
+            modification_date: new Date()
           }
         });
 
@@ -644,7 +681,7 @@ router.post('/bulk', async (req: Request, res: Response) => {
             },
             data: {
               status: 0,
-              modification_date: BigInt(Date.now())
+              modification_date: new Date()
             }
           });
 

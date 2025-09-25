@@ -6,6 +6,17 @@ import moment from 'moment';
 
 const router = Router();
 
+// Helper function to detect device type from params
+function detectDeviceTypeFromParams(params: string): string {
+  try {
+    const paramData = JSON.parse(params || '{}');
+    const userAgent = paramData.user_agent || paramData.ua || '';
+    return detectDeviceType(userAgent);
+  } catch {
+    return 'unknown';
+  }
+}
+
 // Generate comprehensive campaign report
 router.post('/generate', async (req: Request, res: Response) => {
   const { 
@@ -420,46 +431,73 @@ async function generatePerformanceReport(campaignFilter: any, startTime: bigint,
         include: {
           customer: true
         }
-      },
-      _count: {
-        select: {
-          tracking: {
-            where: {
-              creation_date: {
-                gte: startTime,
-                lte: endTime
-              }
-            }
-          },
-          confirm: {
-            where: {
-              creation_date: {
-                gte: startTime,
-                lte: endTime
-              },
-              status: 1
-            }
-          }
-        }
       }
     }
   });
 
-  const totalClicks = campaigns.reduce((sum, c) => sum + c._count.tracking, 0);
-  const totalConversions = campaigns.reduce((sum, c) => sum + c._count.confirm, 0);
+  // Get counts separately using the campaign table directly
+  const [totalClicks, totalConversions] = await Promise.all([
+    // Count all campaigns in the filter (total clicks)
+    prisma.campaign.count({
+      where: {
+        ...campaignFilter,
+        creation_date: {
+          gte: new Date(Number(startTime)),
+          lte: new Date(Number(endTime))
+        }
+      }
+    }),
+    // Count only conversions (status = 1)
+    prisma.campaign.count({
+      where: {
+        ...campaignFilter,
+        creation_date: {
+          gte: new Date(Number(startTime)),
+          lte: new Date(Number(endTime))
+        },
+        status: 1
+      }
+    })
+  ]);
+
   const avgConversionRate = totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0;
 
-  const campaignDetails = campaigns.map(campaign => ({
-    id: campaign.id,
-    trackingId: campaign.tracking,
-    name: `${campaign.product.name} - ${campaign.country}/${campaign.operator}`,
-    customer: campaign.product.customer.name,
-    status: campaign.status,
-    clicks: campaign._count.tracking,
-    conversions: campaign._count.confirm,
-    conversionRate: campaign._count.tracking > 0 
-      ? Math.round((campaign._count.confirm / campaign._count.tracking) * 10000) / 100 
-      : 0
+  // For each campaign, calculate individual stats
+  const campaignDetails = await Promise.all(campaigns.map(async campaign => {
+    const [campaignClicks, campaignConversions] = await Promise.all([
+      prisma.campaign.count({
+        where: {
+          id_product: campaign.id_product,
+          creation_date: {
+            gte: new Date(Number(startTime)),
+            lte: new Date(Number(endTime))
+          }
+        }
+      }),
+      prisma.campaign.count({
+        where: {
+          id_product: campaign.id_product,
+          creation_date: {
+            gte: new Date(Number(startTime)),
+            lte: new Date(Number(endTime))
+          },
+          status: 1
+        }
+      })
+    ]);
+
+    return {
+      id: campaign.id,
+      trackingId: campaign.tracking,
+      name: `${campaign.product.name} - ${campaign.country}/${campaign.operator}`,
+      customer: campaign.product.customer.name,
+      status: campaign.status,
+      clicks: campaignClicks,
+      conversions: campaignConversions,
+      conversionRate: campaignClicks > 0 
+        ? Math.round((campaignConversions / campaignClicks) * 10000) / 100 
+        : 0
+    };
   }));
 
   return {
@@ -478,12 +516,12 @@ async function generatePerformanceReport(campaignFilter: any, startTime: bigint,
 }
 
 async function generateTrafficReport(campaignFilter: any, startTime: bigint, endTime: bigint) {
-  const trafficData = await prisma.tracking.findMany({
+  const trafficData = await prisma.campaign.findMany({
     where: {
-      campaign: campaignFilter,
+      ...campaignFilter,
       creation_date: {
-        gte: startTime,
-        lte: endTime
+        gte: new Date(Number(startTime)),
+        lte: new Date(Number(endTime))
       }
     },
     select: {
@@ -491,20 +529,14 @@ async function generateTrafficReport(campaignFilter: any, startTime: bigint, end
       creation_date: true,
       country: true,
       operator: true,
-      ip: true,
-      user_agent: true,
-      campaign: {
+      params: true,
+      tracking: true,
+      product: {
         select: {
-          id: true,
-          tracking: true,
-          product: {
+          name: true,
+          customer: {
             select: {
-              name: true,
-              customer: {
-                select: {
-                  name: true
-                }
-              }
+              name: true
             }
           }
         }
@@ -522,18 +554,18 @@ async function generateTrafficReport(campaignFilter: any, startTime: bigint, end
     const geoKey = `${traffic.country}/${traffic.operator}`;
     geoDistribution.set(geoKey, (geoDistribution.get(geoKey) || 0) + 1);
 
-    // Device type
-    const deviceType = detectDeviceType(traffic.user_agent || '');
+    // Device type from params (if available)
+    const deviceType = detectDeviceTypeFromParams(traffic.params || '');
     deviceDistribution.set(deviceType, (deviceDistribution.get(deviceType) || 0) + 1);
 
     // Hourly
-    const hour = moment(Number(traffic.creation_date)).hour();
+    const hour = moment(traffic.creation_date).hour();
     hourlyDistribution[hour]++;
   });
 
   return {
     totalClicks: trafficData.length,
-    uniqueIPs: new Set(trafficData.map(t => t.ip)).size,
+    uniqueCountries: new Set(trafficData.map(t => t.country)).size,
     geographic: Array.from(geoDistribution.entries()).map(([location, count]) => {
       const [country, operator] = location.split('/');
       return { country, operator, clicks: count };
@@ -548,55 +580,48 @@ async function generateTrafficReport(campaignFilter: any, startTime: bigint, end
 }
 
 async function generateConversionReport(campaignFilter: any, startTime: bigint, endTime: bigint) {
-  const conversionData = await prisma.confirm.findMany({
+  const conversionData = await prisma.campaign.findMany({
     where: {
-      campaign: campaignFilter,
+      ...campaignFilter,
       creation_date: {
-        gte: startTime,
-        lte: endTime
+        gte: new Date(Number(startTime)),
+        lte: new Date(Number(endTime))
       },
       status: 1
     },
     include: {
-      campaign: {
+      product: {
         include: {
-          product: {
-            include: {
-              customer: true
-            }
-          }
+          customer: true
         }
       }
     }
   });
 
-  // Time-to-conversion analysis
-  const timeToConversion = [];
-  for (const conversion of conversionData) {
-    const relatedTracking = await prisma.tracking.findFirst({
-      where: {
-        id_campaign: conversion.id_campaign
-      },
-      orderBy: {
-        creation_date: 'desc'
-      }
-    });
+  // Time-to-conversion analysis - for campaigns, this is effectively immediate
+  const conversionsByHour = new Array(24).fill(0);
+  const conversionsByDay = new Map();
 
-    if (relatedTracking) {
-      const timeDiff = Number(conversion.creation_date) - Number(relatedTracking.creation_date);
-      timeToConversion.push(timeDiff / (1000 * 60)); // Convert to minutes
-    }
-  }
-
-  const avgTimeToConversion = timeToConversion.length > 0 
-    ? timeToConversion.reduce((sum, time) => sum + time, 0) / timeToConversion.length 
-    : 0;
+  conversionData.forEach(conversion => {
+    const conversionTime = moment(conversion.creation_date);
+    
+    // Hourly distribution
+    conversionsByHour[conversionTime.hour()]++;
+    
+    // Daily distribution
+    const dayKey = conversionTime.format('YYYY-MM-DD');
+    conversionsByDay.set(dayKey, (conversionsByDay.get(dayKey) || 0) + 1);
+  });
 
   return {
     totalConversions: conversionData.length,
-    avgTimeToConversion: Math.round(avgTimeToConversion),
+    avgTimeToConversion: 0, // Immediate conversion for campaigns
     conversionsByProduct: groupConversionsByProduct(conversionData),
-    conversionTrend: generateConversionTrend(conversionData)
+    conversionTrend: Array.from(conversionsByDay.entries()).map(([date, count]) => ({
+      date,
+      conversions: count
+    })).sort((a, b) => a.date.localeCompare(b.date)),
+    hourlyPattern: conversionsByHour.map((count, hour) => ({ hour, count }))
   };
 }
 
@@ -611,7 +636,7 @@ async function generateSummaryReport(campaignFilter: any, startTime: bigint, end
     performance: performanceData.summary,
     traffic: {
       totalClicks: trafficData.totalClicks,
-      uniqueIPs: trafficData.uniqueIPs,
+      uniqueCountries: trafficData.uniqueCountries,
       topCountries: trafficData.geographic.slice(0, 5)
     },
     conversions: {

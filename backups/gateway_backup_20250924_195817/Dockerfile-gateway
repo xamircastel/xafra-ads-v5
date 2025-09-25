@@ -1,0 +1,47 @@
+# Xafra-ads v5 - API Gateway Docker Image
+# High-performance Nginx gateway for microservices
+
+FROM nginx:1.25-alpine
+
+# Install additional packages for monitoring and debugging
+RUN apk add --no-cache \
+    curl \
+    htop \
+    nano \
+    && rm -rf /var/cache/apk/*
+
+# Create necessary directories
+RUN mkdir -p /etc/nginx/conf.d \
+    && mkdir -p /var/log/nginx \
+    && mkdir -p /var/cache/nginx
+
+# Copy custom nginx configuration
+COPY infrastructure/nginx/nginx-gateway.conf /etc/nginx/nginx.conf
+COPY infrastructure/nginx/conf.d/gateway-routes.conf /etc/nginx/conf.d/gateway-routes.conf
+
+# Copy custom error pages
+COPY infrastructure/nginx/html/ /usr/share/nginx/html/
+
+# Set proper permissions
+RUN chmod -R 755 /usr/share/nginx/html \
+    && chown -R nginx:nginx /var/log/nginx \
+    && chown -R nginx:nginx /var/cache/nginx
+
+# Create healthcheck script
+RUN echo '#!/bin/sh' > /usr/local/bin/healthcheck.sh \
+    && echo 'curl -f http://localhost:8080/nginx-health >/dev/null 2>&1 || exit 1' >> /usr/local/bin/healthcheck.sh \
+    && chmod +x /usr/local/bin/healthcheck.sh
+
+# Expose ports
+EXPOSE 80 443 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh
+
+# Use custom entrypoint for graceful startup
+COPY infrastructure/nginx/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

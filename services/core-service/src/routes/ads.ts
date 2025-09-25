@@ -73,7 +73,7 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
 
     // Calculate performance-based distribution for last 24 hours (OPTIMIZED)
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const productIds = randomProducts.map(p => p.id_product);
+    const productIds = randomProducts.map((p: any) => p.id_product);
     
     // Single optimized query for all products
     const [campaignStats, confirmationStats] = await Promise.all([
@@ -100,10 +100,10 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
     ]);
 
     // Build performance map from aggregated results
-    const campaignMap = new Map(campaignStats.map(s => [s.id_product, s._count.id]));
-    const confirmationMap = new Map(confirmationStats.map(s => [s.id_product, s._count.id]));
+    const campaignMap = new Map(campaignStats.map((s: any) => [s.id_product, s._count.id]));
+    const confirmationMap = new Map(confirmationStats.map((s: any) => [s.id_product, s._count.id]));
     
-    const productPerformance = randomProducts.map(product => {
+    const productPerformance = randomProducts.map((product: any) => {
       const campaignCount = campaignMap.get(product.id_product) || 0;
       const confirmations = confirmationMap.get(product.id_product) || 0;
       const conversionRate = (campaignCount as number) > 0 ? (confirmations as number) / (campaignCount as number) : 0;
@@ -118,8 +118,8 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
     });
 
     // Check if we have enough data for performance-based distribution
-    const productsWithData = productPerformance.filter(p => p.hasEnoughData);
-    const totalCampaigns = productPerformance.reduce((sum, p) => sum + p.campaignCount, 0);
+    const productsWithData = productPerformance.filter((p: any) => p.hasEnoughData);
+    const totalCampaigns = productPerformance.reduce((sum: number, p: any) => sum + p.campaignCount, 0);
     
     let selectedProduct;
     let selectionMethod;
@@ -127,8 +127,8 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
     if (productsWithData.length >= 2 && totalCampaigns >= 20) {
       // PERFORMANCE-BASED DISTRIBUTION
       // Calculate weights based on conversion rates
-      const maxConversionRate = Math.max(...productsWithData.map(p => p.conversionRate));
-      const weights = productsWithData.map(p => {
+      const maxConversionRate = Math.max(...productsWithData.map((p: any) => p.conversionRate));
+      const weights = productsWithData.map((p: any) => {
         // Give higher weight to better performing products
         // Add base weight to ensure even poor performers get some traffic
         const baseWeight = 0.1;
@@ -137,7 +137,7 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
       });
 
       // Weighted random selection
-      const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+      const totalWeight = weights.reduce((sum: number, w: number) => sum + w, 0);
       const randomValue = Math.random() * totalWeight;
       
       let cumulativeWeight = 0;
@@ -152,7 +152,7 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
       
       // Fallback to best performer if something goes wrong
       if (!selectedProduct) {
-        const bestPerformer = productsWithData.reduce((best, current) => 
+        const bestPerformer = productsWithData.reduce((best: any, current: any) => 
           current.conversionRate > best.conversionRate ? current : best
         );
         selectedProduct = bestPerformer.product;
@@ -171,7 +171,7 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
       productsWithData: productsWithData.length,
       totalCampaigns24h: totalCampaigns,
       selectedProductId: selectedProduct.id_product,
-      performanceData: productPerformance.map(p => ({
+      performanceData: productPerformance.map((p: any) => ({
         productId: p.product.id_product,
         campaignCount: p.campaignCount,
         confirmations: p.confirmations,
@@ -256,6 +256,263 @@ router.get("/random/:encryptedId", async (req: Request, res: Response) => {
   } catch (error) {
     const duration = Date.now() - startTime;
     logger.error('Random traffic ad request failed', error as Error, { encryptedId, tracker, duration });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Auto-tracking + Random route - combines intelligent tracking with random distribution
+router.get("/tr/random/:encryptedId", async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  const { encryptedId } = req.params;
+  const tracker = req.query.tracker as string;
+
+  try {
+    // Log incoming auto-tracking + random request
+    logger.info('Auto-Tracking + Random Ad Request', {
+      encryptedId: encryptedId.substring(0, 10) + '...',
+      tracker: tracker || 'auto-generated',
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      route: '/ads/tr/random/'
+    });
+
+    // Call our decrypt endpoint
+    const baseUrl = process.env.NODE_ENV === 'staging' 
+      ? 'https://core-service-stg-shk2qzic2q-uc.a.run.app'
+      : 'http://localhost:8080';
+    const decryptResponse = await fetch(`${baseUrl}/api/util/decrypt`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-api-key': 'xafra_mfs9yf3g_e8c39158306ce0759b573cf36c56218b'
+      },
+      body: JSON.stringify({ encrypted_id: encryptedId })
+    });
+
+    if (!decryptResponse.ok) {
+      logger.warn('Auto-tracking + random decryption failed', { encryptedId, status: decryptResponse.status });
+      res.status(404).json({ error: 'Invalid or expired encrypted ID' });
+      return;
+    }
+
+    const decryptResult = await decryptResponse.json();
+    const { product_id, customer_id } = (decryptResult as any).data;
+
+    // Get original product to verify access
+    const originalProduct = await prisma.product.findUnique({
+      where: { id_product: product_id },
+      include: { customer: true }
+    });
+
+    if (!originalProduct || originalProduct.active !== 1) {
+      logger.warn('Original product not found or inactive (auto-tracking + random)', { product_id, customer_id });
+      res.status(404).json({ error: 'Product not found or inactive' });
+      return;
+    }
+
+    // Get random products from same customer with random=1
+    const randomProducts = await prisma.product.findMany({
+      where: {
+        id_customer: customer_id,
+        active: 1,
+        random: 1
+      },
+      include: { customer: true }
+    });
+
+    if (randomProducts.length === 0) {
+      logger.warn('No random products available (auto-tracking + random)', { customer_id });
+      res.status(404).json({ error: 'No random products available for this customer' });
+      return;
+    }
+
+    // Calculate performance-based distribution for last 24 hours (same logic as /ads/random/)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const productIds = randomProducts.map((p: any) => p.id_product);
+    
+    // Single optimized query for all products
+    const [campaignStats, confirmationStats] = await Promise.all([
+      // Get campaign counts for all products in one query
+      prisma.campaign.groupBy({
+        by: ['id_product'],
+        where: {
+          id_product: { in: productIds },
+          creation_date: { gte: twentyFourHoursAgo }
+        },
+        _count: { id: true }
+      }),
+      
+      // Get confirmation counts for all products in one query
+      prisma.campaign.groupBy({
+        by: ['id_product'],
+        where: {
+          id_product: { in: productIds },
+          creation_date: { gte: twentyFourHoursAgo },
+          status_post_back: 1
+        },
+        _count: { id: true }
+      })
+    ]);
+
+    // Build performance map from aggregated results
+    const campaignMap = new Map(campaignStats.map((s: any) => [s.id_product, s._count.id]));
+    const confirmationMap = new Map(confirmationStats.map((s: any) => [s.id_product, s._count.id]));
+    
+    const productPerformance = randomProducts.map((product: any) => {
+      const campaignCount = campaignMap.get(product.id_product) || 0;
+      const confirmations = confirmationMap.get(product.id_product) || 0;
+      const conversionRate = (campaignCount as number) > 0 ? (confirmations as number) / (campaignCount as number) : 0;
+
+      return {
+        product,
+        campaignCount: campaignCount as number,
+        confirmations: confirmations as number,
+        conversionRate,
+        hasEnoughData: (campaignCount as number) >= 10 // Minimum threshold for reliable data
+      };
+    });
+
+    // Check if we have enough data for performance-based distribution
+    const productsWithData = productPerformance.filter((p: any) => p.hasEnoughData);
+    const totalCampaigns = productPerformance.reduce((sum: number, p: any) => sum + p.campaignCount, 0);
+    
+    let selectedProduct;
+    let selectionMethod;
+
+    if (productsWithData.length >= 2 && totalCampaigns >= 20) {
+      // PERFORMANCE-BASED DISTRIBUTION
+      // Calculate weights based on conversion rates
+      const maxConversionRate = Math.max(...productsWithData.map((p: any) => p.conversionRate));
+      const weights = productsWithData.map((p: any) => {
+        // Give higher weight to better performing products
+        // Add base weight to ensure even poor performers get some traffic
+        const baseWeight = 0.1;
+        const performanceWeight = maxConversionRate > 0 ? (p.conversionRate / maxConversionRate) * 0.9 : 0;
+        return baseWeight + performanceWeight;
+      });
+
+      // Weighted random selection
+      const totalWeight = weights.reduce((sum: number, w: number) => sum + w, 0);
+      const randomValue = Math.random() * totalWeight;
+      
+      let cumulativeWeight = 0;
+      for (let i = 0; i < productsWithData.length; i++) {
+        cumulativeWeight += weights[i];
+        if (randomValue <= cumulativeWeight) {
+          selectedProduct = productsWithData[i].product;
+          selectionMethod = 'performance-weighted';
+          break;
+        }
+      }
+      
+      // Fallback to best performer if something goes wrong
+      if (!selectedProduct) {
+        const bestPerformer = productsWithData.reduce((best: any, current: any) => 
+          current.conversionRate > best.conversionRate ? current : best
+        );
+        selectedProduct = bestPerformer.product;
+        selectionMethod = 'best-performer-fallback';
+      }
+    } else {
+      // RANDOM DISTRIBUTION (insufficient data)
+      selectedProduct = randomProducts[Math.floor(Math.random() * randomProducts.length)];
+      selectionMethod = 'random-insufficient-data';
+    }
+
+    // Log distribution decision
+    logger.info('Auto-tracking + random distribution decision', {
+      selectionMethod,
+      totalProducts: randomProducts.length,
+      productsWithData: productsWithData.length,
+      totalCampaigns24h: totalCampaigns,
+      selectedProductId: selectedProduct.id_product,
+      performanceData: productPerformance.map((p: any) => ({
+        productId: p.product.id_product,
+        campaignCount: p.campaignCount,
+        confirmations: p.confirmations,
+        conversionRate: Math.round(p.conversionRate * 10000) / 100, // Percentage with 2 decimals
+        hasEnoughData: p.hasEnoughData
+      }))
+    });
+
+    // Generate intelligent auto-tracking IDs based on location and context (from /ads/tr/ logic)
+    const country = selectedProduct.country || originalProduct.country || 'CR';
+    const operator = selectedProduct.operator || originalProduct.operator || 'KOLBI';
+    
+    // Auto-generate tracking ID with location prefix (combining auto-tracking + random prefixes)
+    const autoRandomTrackingId = tracker || generateTrackingId(`ATR_RND_${country}_${operator}`);
+    const xafraTrackingId = generateTrackingId('XAFRA_AUTO_RANDOM');
+    const uuid = generateUUID();
+
+    // Create campaign record with both auto-tracking and random distribution flags
+    const campaign = await prisma.campaign.create({
+      data: {
+        id_product: selectedProduct.id_product, // Use selected random product
+        tracking: autoRandomTrackingId,
+        status: 2, // Pending conversion
+        uuid: uuid,
+        xafra_tracking_id: xafraTrackingId,
+        country: country,
+        operator: operator,
+        creation_date: new Date(),
+        params: JSON.stringify({ 
+          autoTracking: true,
+          randomDistribution: true,
+          sourceRoute: '/ads/tr/random/',
+          originalProductId: product_id,
+          selectedProductId: selectedProduct.id_product,
+          availableProducts: randomProducts.length,
+          selectionMethod: selectionMethod,
+          distributionData: {
+            totalCampaigns24h: totalCampaigns,
+            productsWithData: productsWithData.length,
+            performanceBased: selectionMethod === 'performance-weighted'
+          },
+          generatedAt: new Date().toISOString()
+        }, (key, value) => typeof value === 'bigint' ? value.toString() : value)
+      }
+    });
+
+    // Prepare redirect URL from selected product
+    let redirectUrl = selectedProduct.url_redirect_success || 'https://example.com';
+    
+    // Replace tracking placeholder in the selected product URL
+    redirectUrl = redirectUrl.replace(/<TRAKING>/g, autoRandomTrackingId);
+    redirectUrl = redirectUrl.replace(/<TRACKING>/g, autoRandomTrackingId);
+    
+    // Only add xafra_tracking if not already present
+    if (!redirectUrl.includes('xafra_tracking=')) {
+      if (redirectUrl.includes('?')) {
+        redirectUrl += `&xafra_tracking=${xafraTrackingId}`;
+      } else {
+        redirectUrl += `?xafra_tracking=${xafraTrackingId}`;
+      }
+    }
+
+    // Log successful auto-tracking + random redirect
+    const duration = Date.now() - startTime;
+    logger.info('Successful auto-tracking + random redirect', {
+      originalProductId: product_id,
+      selectedProductId: selectedProduct.id_product,
+      selectedProductName: selectedProduct.name,
+      customerId: customer_id,
+      autoRandomTrackingId,
+      xafraTrackingId,
+      campaignId: campaign.id,
+      availableProducts: randomProducts.length,
+      selectionMethod: selectionMethod,
+      country,
+      operator,
+      redirectUrl: redirectUrl.substring(0, 100) + '...',
+      duration
+    });
+
+    // Redirect to selected random product URL
+    res.redirect(302, redirectUrl);
+
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logger.error('Auto-tracking + random ad request failed', error as Error, { encryptedId, tracker, duration });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

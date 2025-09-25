@@ -1,0 +1,21 @@
+{
+  "campaign_id": 18,
+  "tracking_id": "testxamir230920251721",
+  "conversion_id": "test_conv_manual_230925",
+  "webhook_url": "https://httpbin.org/post",
+  "postback_parameters": {
+    "customer_id": 3,
+    "customer_name": "Cliente Test",
+    "product_id": 3,
+    "product_name": "Producto Test",
+    "original_tracking": "testxamir230920251721",
+    "short_tracking": "testxamir230920251721",
+    "tracking_used": "testxamir230920251721",
+    "is_kolbi_confirmation": true,
+    "confirmed_at": "2025-09-23T22:24:15.981Z",
+    "country": "CR",
+    "operator": "KOLBI",
+    "method": "POST"
+  },
+  "priority": "high"
+}

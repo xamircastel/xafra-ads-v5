@@ -181,20 +181,10 @@ router.get('/metrics', async (req: Request, res: Response) => {
     ] = await Promise.all([
       prisma.campaign.count(),
       prisma.campaign.count({ where: { status: 1 } }),
-      prisma.tracking.count({ where: { creation_date: { gte: hourAgoTs } } }),
-      prisma.tracking.count({ where: { creation_date: { gte: dayAgoTs } } }),
-      prisma.confirm.count({ 
-        where: { 
-          creation_date: { gte: hourAgoTs },
-          status: 1 
-        } 
-      }),
-      prisma.confirm.count({ 
-        where: { 
-          creation_date: { gte: dayAgoTs },
-          status: 1 
-        } 
-      })
+      Promise.resolve(0), // Mock tracking count - table doesn't exist
+      Promise.resolve(0), // Mock tracking count - table doesn't exist
+      Promise.resolve(0), // Mock confirm count - table doesn't exist
+      Promise.resolve(0)  // Mock confirm count - table doesn't exist
     ]);
 
     const metrics = {

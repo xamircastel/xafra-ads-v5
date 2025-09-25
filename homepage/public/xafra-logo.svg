@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="100" viewBox="0 0 200 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- XAFRA text in black -->
+  <text x="20" y="35" font-family="Arial Black, sans-serif" font-size="28" font-weight="900" fill="#000000">XAFRA</text>
+  
+  <!-- ADS with gradient -->
+  <defs>
+    <linearGradient id="orangeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFD700;stop-opacity:1" />
+      <stop offset="25%" style="stop-color:#FFA500;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#FF8C00;stop-opacity:1" />
+      <stop offset="75%" style="stop-color:#FF6347;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF4500;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- A with arrows -->
+  <text x="20" y="75" font-family="Arial Black, sans-serif" font-size="28" font-weight="900" fill="url(#orangeGradient)">A</text>
+  <!-- Arrows inside A -->
+  <polygon points="35,60 40,65 35,70" fill="white"/>
+  <polygon points="40,60 35,65 40,70" fill="white"/>
+  
+  <!-- D with pie chart -->
+  <circle cx="70" cy="62" r="13" fill="url(#orangeGradient)"/>
+  <!-- Pie segments -->
+  <path d="M 70,49 L 70,62 L 83,62 A 13,13 0 0,1 78,73 Z" fill="#FFD700"/>
+  <path d="M 70,62 L 78,73 A 13,13 0 0,1 62,73 Z" fill="#FFA500"/>
+  <path d="M 70,62 L 62,73 A 13,13 0 0,1 57,62 Z" fill="#FF8C00"/>
+  <path d="M 70,62 L 57,62 A 13,13 0 0,1 70,49 Z" fill="#FF6347"/>
+  <!-- White lines for segments -->
+  <line x1="70" y1="49" x2="70" y2="62" stroke="white" stroke-width="1"/>
+  <line x1="70" y1="62" x2="83" y2="62" stroke="white" stroke-width="1"/>
+  <line x1="70" y1="62" x2="78" y2="73" stroke="white" stroke-width="1"/>
+  <line x1="70" y1="62" x2="62" y2="73" stroke="white" stroke-width="1"/>
+  <line x1="70" y1="62" x2="57" y2="62" stroke="white" stroke-width="1"/>
+  
+  <!-- S -->
+  <text x="90" y="75" font-family="Arial Black, sans-serif" font-size="28" font-weight="900" fill="url(#orangeGradient)">S</text>
+</svg>
