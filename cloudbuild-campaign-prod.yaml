@@ -34,6 +34,9 @@ steps:
       '--timeout', '300s'
     ]
 
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/xafra-ads/campaign-service-prod:$SHORT_SHA'
+
 options:
   machineType: 'E2_HIGHCPU_8'
   disk_size_gb: 100

@@ -66,6 +66,9 @@ steps:
     id: 'health-check'
     waitFor: ['deploy-gateway']
 
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/xafra-ads/gateway-prod:$SHORT_SHA'
+
 options:
   logging: CLOUD_LOGGING_ONLY
   machineType: 'E2_HIGHCPU_8'
