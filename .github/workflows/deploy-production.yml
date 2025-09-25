@@ -66,13 +66,34 @@ jobs:
         node-version: '20'
         cache: 'npm'
         
+    - name: 🔧 Build shared packages
+      run: |
+        echo "Building shared packages for production..."
+        npm ci
+        
+        # Build database package
+        if [ -d "packages/database" ]; then
+          echo "Building @xafra/database..."
+          cd packages/database
+          npm ci || npm install || echo "Database package install failed"
+          npx prisma generate || echo "Prisma generate failed"
+          npm run build || echo "Database build failed"
+          cd ../..
+        fi
+        
+        # Build shared package
+        if [ -d "packages/shared" ]; then
+          echo "Building @xafra/shared..."
+          cd packages/shared
+          npm ci || npm install || echo "Shared package install failed"
+          npm run build || echo "Shared build failed"
+          cd ../..
+        fi
+        
     - name: 🧪 Run production tests (unless skipped)
       if: github.event.inputs.skip_tests != 'true'
       run: |
-        npm ci
-        cd packages/database
-        npx prisma generate
-        cd ../..
+        # Packages are already built and installed above
         
         # Build and test all services
         services=("core-service" "auth-service" "campaign-service" "tracking-service" "postback-service")
