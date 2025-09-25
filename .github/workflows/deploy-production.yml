@@ -17,6 +17,11 @@ on:
         default: 'false'
         type: boolean
 
+# 🔐 Required permissions for Workload Identity Federation
+permissions:
+  contents: read
+  id-token: write
+
 env:
   PROJECT_ID: xafra-ads
   REGION: us-central1

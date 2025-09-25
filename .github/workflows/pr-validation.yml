@@ -10,6 +10,12 @@ on:
   pull_request:
     branches: [ master, develop ]
 
+# 🔐 Required permissions for Workload Identity Federation
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
 env:
   NODE_VERSION: '20'
 

@@ -12,6 +12,11 @@ on:
   pull_request:
     branches: [ develop ]
 
+# 🔐 Required permissions for Workload Identity Federation
+permissions:
+  contents: read
+  id-token: write
+
 env:
   PROJECT_ID: xafra-ads
   REGION: us-central1
@@ -41,12 +46,28 @@ jobs:
         npm ci || echo "Root npm ci failed, trying npm install..."
         npm install || echo "Root install failed, continuing..."
       
-    - name: 🔧 Generate Prisma Client
+    - name: 🔧 Build shared packages
       run: |
-        echo "Generating Prisma Client..."
-        cd packages/database
-        npx prisma generate || echo "Prisma generate failed, continuing..."
-        cd ../..
+        echo "Building shared packages..."
+        
+        # Build database package
+        if [ -d "packages/database" ]; then
+          echo "Building @xafra/database..."
+          cd packages/database
+          npm ci || npm install || echo "Database package install failed"
+          npx prisma generate || echo "Prisma generate failed"
+          npm run build || echo "Database build failed"
+          cd ../..
+        fi
+        
+        # Build shared package
+        if [ -d "packages/shared" ]; then
+          echo "Building @xafra/shared..."
+          cd packages/shared
+          npm ci || npm install || echo "Shared package install failed"
+          npm run build || echo "Shared build failed"
+          cd ../..
+        fi
         
     - name: 🧪 Build and validate all services
       run: |
