@@ -1,0 +1,44 @@
+steps:
+  # Build Auth Service para Producción
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-f', 'deployment/Dockerfile.auth-service',
+      '-t', 'us-central1-docker.pkg.dev/xafra-ads/xafra-ads/auth-service-prod:latest',
+      '.'
+    ]
+    
+  # Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push',
+      'us-central1-docker.pkg.dev/xafra-ads/xafra-ads/auth-service-prod:latest'
+    ]
+    
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args: [
+      'run', 'deploy', 'auth-service-prod',
+      '--image', 'us-central1-docker.pkg.dev/xafra-ads/xafra-ads/auth-service-prod:latest',
+      '--region', 'us-central1',
+      '--platform', 'managed',
+      '--allow-unauthenticated',
+      '--port', '8080',
+      '--set-env-vars', 'NODE_ENV=production,DATABASE_URL=postgresql://postgres:XafraTech2025!@34.28.245.62:5432/xafra-ads?schema=production,REDIS_URL=redis://10.147.230.83:6379,REDIS_PREFIX=production,ENCRYPTION_KEY=prod-256-bit-encryption-key-for-production-environment-secure',
+      '--vpc-connector', 'xafra-vpc-connector',
+      '--memory', '1Gi',
+      '--cpu', '2',
+      '--min-instances', '1',
+      '--max-instances', '8',
+      '--timeout', '300s'
+    ]
+    
+images:
+  - 'us-central1-docker.pkg.dev/xafra-ads/xafra-ads/auth-service-prod:latest'
+  
+options:
+  machineType: 'E2_HIGHCPU_8'
+  disk_size_gb: 100
+
+timeout: '1200s'

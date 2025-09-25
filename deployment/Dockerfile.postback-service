@@ -1,0 +1,53 @@
+# 🚀 Dockerfile específico para Postback Service - SOLUCIÓN DEFINITIVA PRISMA
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Instalar dependencias del sistema
+RUN apk add --no-cache openssl ca-certificates curl
+
+# PASO 1: Configurar toda la estructura del workspace
+COPY package*.json ./
+COPY tsconfig*.json ./
+
+# PASO 2: Copiar TODA la estructura antes de instalar nada
+COPY packages/ ./packages/
+COPY services/postback-service/ ./services/postback-service/
+COPY environments/ ./environments/
+
+# PASO 3: Instalar dependencias del ROOT workspace (incluye @prisma/client)
+RUN npm ci
+
+# PASO 4: Generar Prisma Client ANTES de hacer build
+WORKDIR /app/packages/database
+RUN npx prisma generate
+
+# PASO 5: Cambiar a postback-service e instalar sus dependencias
+WORKDIR /app/services/postback-service
+RUN npm ci
+
+# PASO 6: Compilar TypeScript (ahora Prisma Client ya existe)
+RUN npm run build
+
+# PASO 7: Verificar que Prisma Client está disponible
+RUN node -e "console.log('Testing Prisma Client...'); const { PrismaClient } = require('@prisma/client'); console.log('✅ Prisma Client available');"
+
+# PASO 8: Volver al directorio principal para el runtime
+WORKDIR /app
+
+# PASO 9: Variables de ambiente
+ENV NODE_ENV=production
+ENV PORT=8080
+ENV REDIS_HOST=127.0.0.1
+ENV REDIS_PORT=6379
+ENV REDIS_DB=0
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Exponer puerto
+EXPOSE 8080
+
+# Comando de inicio - regenerar Prisma y ejecutar
+CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../../services/postback-service && node dist/index.js"]

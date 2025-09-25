@@ -42,27 +42,32 @@
 
 ### **1.1 Infraestructura Production**
 
-#### **Base de Datos Production**
+#### **Base de Datos Production (CORREGIDO - Usar Existente)**
 ```yaml
-# PostgreSQL Production Instance
-Name: xafra-ads-postgres-prod
-Type: Cloud SQL PostgreSQL 13
-Tier: db-custom-2-4096 (2 vCPU, 4GB RAM)
-Storage: 50GB SSD
-Backup: Automated daily
-High Availability: Multi-zone
-Network: Private IP + authorized networks only
+# PostgreSQL Existente con Separación por Schemas
+Instance: xafra-ads-postgres (EXISTENTE - 34.28.245.62)
+Schemas:
+  - public: datos compartidos/configuración
+  - staging: ambiente staging (EXISTENTE)
+  - production: ambiente production (CREAR)
+Users:
+  - postgres: admin completo
+  - xafra_app_prod: solo schema production (CREAR)
+Estrategia: 1 instancia, múltiples esquemas
+Costo adicional: $0 (reutiliza infraestructura)
 ```
 
 #### **Cache Production**
 ```yaml
-# Redis Production Instance  
+# Redis Production Instance (NUEVA - Separada de Staging)
 Name: xafra-redis-production
 Type: Memorystore Redis
 Tier: Standard (1GB)
 Version: Redis 6.x
 Network: VPC Private
-High Availability: Multi-zone
+Existing Staging: xafra-redis-staging (MANTENER)
+Estrategia: Instancias separadas por ambiente
+Costo adicional: ~$50/mes
 ```
 
 #### **Networking Production**
@@ -173,19 +178,19 @@ Rollback:
 └── cloudbuild-canary.yaml             # 🔄 Canary deployments
 ```
 
-#### **Environment Variables Strategy**
+#### **Environment Variables Strategy (CORREGIDO)**
 ```yaml
-# Staging Variables
+# Staging Variables (EXISTENTE)
 ENVIRONMENT: staging
-DATABASE_URL: postgresql://staging-connection
-REDIS_URL: redis://staging-redis
+DATABASE_URL: postgresql://postgres:[PASSWORD]@34.28.245.62:5432/xafra_ads?schema=staging
+REDIS_URL: redis://10.147.230.83:6379
 LOG_LEVEL: debug
 RATE_LIMIT: permissive
 
-# Production Variables  
+# Production Variables (NUEVO)
 ENVIRONMENT: production
-DATABASE_URL: postgresql://production-connection
-REDIS_URL: redis://production-redis
+DATABASE_URL: postgresql://xafra_app_prod:[PASSWORD]@34.28.245.62:5432/xafra_ads?schema=production
+REDIS_URL: redis://[PROD_REDIS_IP]:6379
 LOG_LEVEL: info
 RATE_LIMIT: strict
 MONITORING: enhanced

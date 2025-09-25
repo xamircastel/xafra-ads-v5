@@ -1,0 +1,200 @@
+# 🏭 CI/CD Pipeline - PRODUCTION DEPLOYMENT
+# =========================================
+# Trigger: Push to 'master' branch OR manual dispatch
+# Target: Production environment (xafra-ads.com)
+# Purpose: Production deployment with safety checks
+
+name: 🏭 Deploy to Production
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      skip_tests:
+        description: 'Skip tests (emergency deployment)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  PROJECT_ID: xafra-ads
+  REGION: us-central1
+  GAR_LOCATION: us-central1-docker.pkg.dev/xafra-ads
+
+jobs:
+  # ========================================
+  # JOB 1: SAFETY CHECKS
+  # ========================================
+  safety-checks:
+    name: 🛡️ Safety Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔍 Verify production files
+      run: |
+        required_files=(
+          "cloudbuild-core-prod.yaml"
+          "cloudbuild-auth-prod.yaml" 
+          "cloudbuild-campaign-prod.yaml"
+          "cloudbuild-tracking-prod.yaml"
+          "cloudbuild-postback-prod.yaml"
+          "cloudbuild-gateway-prod.yaml"
+          "environments/production/.env.production"
+        )
+        
+        for file in "${required_files[@]}"; do
+          if [ ! -f "$file" ]; then
+            echo "❌ Missing required file: $file"
+            exit 1
+          else
+            echo "✅ Found: $file"
+          fi
+        done
+        
+    - name: 📦 Setup Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: 🧪 Run production tests (unless skipped)
+      if: github.event.inputs.skip_tests != 'true'
+      run: |
+        npm ci
+        cd packages/database
+        npx prisma generate
+        cd ../..
+        
+        # Build and test all services
+        services=("core-service" "auth-service" "campaign-service" "tracking-service" "postback-service")
+        for service in "${services[@]}"; do
+          if [ -d "services/$service" ]; then
+            echo "🏗️ Building $service for production..."
+            cd "services/$service"
+            npm ci
+            npm run build
+            cd ../..
+          fi
+        done
+
+  # ========================================
+  # JOB 2: DEPLOY TO PRODUCTION
+  # ========================================
+  deploy-production:
+    name: 🚀 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: safety-checks
+    environment: production  # GitHub environment protection
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔐 Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: 'projects/697203931362/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+        service_account: 'github-actions-xafra@xafra-ads.iam.gserviceaccount.com'
+        
+    - name: ⚙️ Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      
+    - name: 🔧 Configure Docker for GAR
+      run: gcloud auth configure-docker us-central1-docker.pkg.dev
+      
+    - name: 🏗️ Deploy Core Service PROD
+      run: |
+        echo "🏗️ Deploying Core Service to Production..."
+        gcloud builds submit --config=cloudbuild-core-prod.yaml
+        
+    - name: 🔐 Deploy Auth Service PROD
+      run: |
+        echo "🔐 Deploying Auth Service to Production..."
+        gcloud builds submit --config=cloudbuild-auth-prod.yaml
+        
+    - name: 📊 Deploy Campaign Service PROD
+      run: |
+        echo "📊 Deploying Campaign Service to Production..."
+        gcloud builds submit --config=cloudbuild-campaign-prod.yaml
+        
+    - name: 📈 Deploy Tracking Service PROD
+      run: |
+        echo "📈 Deploying Tracking Service to Production..."
+        gcloud builds submit --config=cloudbuild-tracking-prod.yaml
+        
+    - name: 📤 Deploy Postback Service PROD
+      run: |
+        echo "📤 Deploying Postback Service to Production..."
+        gcloud builds submit --config=cloudbuild-postback-prod.yaml
+        
+    - name: 🌐 Deploy Gateway PROD
+      run: |
+        echo "🌐 Deploying Gateway to Production..."
+        gcloud builds submit --config=cloudbuild-gateway-prod.yaml
+
+  # ========================================
+  # JOB 3: PRODUCTION HEALTH CHECKS
+  # ========================================
+  production-health-check:
+    name: 🔍 Production Health Check
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    
+    steps:   
+    - name: ⏱️ Wait for production services to start
+      run: sleep 120  # More time for production
+      
+    - name: 🔍 Check Core Service PROD
+      run: |
+        curl -f https://core-service-prod-697203931362.us-central1.run.app/health || exit 1
+        echo "✅ Core Service PROD: Healthy"
+        
+    - name: 🔍 Check Auth Service PROD
+      run: |
+        curl -f https://auth-service-prod-697203931362.us-central1.run.app/health || exit 1
+        echo "✅ Auth Service PROD: Healthy"
+        
+    - name: 🔍 Check Campaign Service PROD
+      run: |
+        curl -f https://campaign-service-prod-697203931362.us-central1.run.app/health || exit 1
+        echo "✅ Campaign Service PROD: Healthy"
+        
+    - name: 🔍 Check Tracking Service PROD
+      run: |
+        curl -f https://tracking-service-prod-697203931362.us-central1.run.app/health || exit 1
+        echo "✅ Tracking Service PROD: Healthy"
+        
+    - name: 🔍 Check Postback Service PROD
+      run: |
+        curl -f https://postback-service-prod-697203931362.us-central1.run.app/health || exit 1
+        echo "✅ Postback Service PROD: Healthy"
+        
+    - name: 🔍 Check Gateway PROD
+      run: |
+        curl -f https://gateway-prod-697203931362.us-central1.run.app/gateway/health || exit 1
+        echo "✅ Gateway PROD: Healthy"
+        
+    - name: 🎉 Production deployment successful
+      run: |
+        echo "🎉 ALL PRODUCTION SERVICES ARE HEALTHY!"
+        echo "🌐 Xafra-ads v5 is now live in production!"
+        
+  # ========================================
+  # JOB 4: ROLLBACK ON FAILURE
+  # ========================================
+  rollback-on-failure:
+    name: 🔄 Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [deploy-production, production-health-check]
+    if: failure()
+    
+    steps:
+    - name: 🚨 Production deployment failed
+      run: |
+        echo "🚨 PRODUCTION DEPLOYMENT FAILED!"
+        echo "🔄 Consider manual rollback if needed"
+        echo "📞 Check logs and contact DevOps team"

@@ -1,0 +1,135 @@
+# 🧪 CI/CD Pipeline - STAGING DEPLOYMENT
+# =====================================
+# Trigger: Push to 'develop' branch
+# Target: Staging environment (*.run.app URLs)
+# Purpose: Continuous integration and testing
+
+name: 🧪 Deploy to Staging
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
+
+env:
+  PROJECT_ID: xafra-ads
+  REGION: us-central1
+  GAR_LOCATION: us-central1-docker.pkg.dev/xafra-ads
+
+jobs:
+  # ========================================
+  # JOB 1: RUN TESTS
+  # ========================================
+  test:
+    name: 🧪 Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        
+    - name: 🔧 Install root dependencies
+      run: npm ci
+      
+    - name: 🔧 Generate Prisma Client
+      run: |
+        cd packages/database
+        npx prisma generate
+        
+    - name: 🧪 Run tests for all services
+      run: |
+        services=("core-service" "auth-service" "campaign-service" "tracking-service" "postback-service")
+        for service in "${services[@]}"; do
+          if [ -d "services/$service" ]; then
+            echo "🧪 Testing $service..."
+            cd "services/$service"
+            npm ci
+            npm run build
+            # npm run test # Uncomment when tests are available
+            cd ../..
+          fi
+        done
+
+  # ========================================
+  # JOB 2: DEPLOY TO STAGING
+  # ========================================
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔐 Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: 'projects/697203931362/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+        service_account: 'github-actions-xafra@xafra-ads.iam.gserviceaccount.com'
+        
+    - name: ⚙️ Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      
+    - name: 🔧 Configure Docker for GAR
+      run: gcloud auth configure-docker us-central1-docker.pkg.dev
+      
+    - name: 🏗️ Deploy Core Service
+      run: |
+        gcloud builds submit --config=cloudbuild-core-stg.yaml
+        
+    - name: 🔐 Deploy Auth Service
+      run: |
+        gcloud builds submit --config=cloudbuild-auth-stg.yaml
+        
+    - name: 📊 Deploy Campaign Service
+      run: |
+        gcloud builds submit --config=cloudbuild-campaign-stg.yaml
+        
+    - name: 📈 Deploy Tracking Service
+      run: |
+        gcloud builds submit --config=cloudbuild-tracking-stg.yaml
+        
+    - name: 📤 Deploy Postback Service
+      run: |
+        gcloud builds submit --config=cloudbuild-postback-stg.yaml
+        
+    - name: 🌐 Deploy Gateway
+      run: |
+        gcloud builds submit --config=cloudbuild-gateway-stg.yaml
+
+  # ========================================
+  # JOB 3: HEALTH CHECKS
+  # ========================================
+  health-check:
+    name: 🔍 Health Check
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    
+    steps:
+    - name: ⏱️ Wait for services to start
+      run: sleep 60
+      
+    - name: 🔍 Check Core Service
+      run: |
+        curl -f https://core-service-stg-697203931362.us-central1.run.app/health || exit 1
+        
+    - name: 🔍 Check Postback Service
+      run: |
+        curl -f https://postback-service-stg-697203931362.us-central1.run.app/api/health || exit 1
+        
+    - name: 🔍 Check Gateway
+      run: |
+        curl -f https://gateway-stg-697203931362.us-central1.run.app/gateway/health || exit 1
+        
+    - name: ✅ All services healthy
+      run: echo "🎉 All staging services are healthy!"

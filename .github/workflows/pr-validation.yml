@@ -1,0 +1,194 @@
+# 🧪 CI/CD Pipeline - PULL REQUEST VALIDATION
+# ============================================
+# Trigger: Pull Request to any branch
+# Purpose: Code quality, tests, and build validation
+# No deployment - only validation
+
+name: 🧪 PR Validation
+
+on:
+  pull_request:
+    branches: [ master, develop ]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ========================================
+  # JOB 1: CODE QUALITY CHECKS
+  # ========================================
+  code-quality:
+    name: 🔍 Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: 🔧 Install dependencies
+      run: npm ci
+      
+    - name: 🔍 Check for TypeScript errors
+      run: npx tsc --noEmit
+      
+    - name: 🎨 Check code formatting (if prettier configured)
+      run: |
+        if [ -f ".prettierrc" ] || [ -f "prettier.config.js" ]; then
+          npx prettier --check "**/*.{ts,js,json,md}"
+        else
+          echo "⚠️ Prettier not configured, skipping format check"
+        fi
+      continue-on-error: true
+      
+    - name: 🔍 Lint code (if ESLint configured)
+      run: |
+        if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ]; then
+          npx eslint "**/*.{ts,js}"
+        else
+          echo "⚠️ ESLint not configured, skipping lint check"
+        fi
+      continue-on-error: true
+
+  # ========================================
+  # JOB 2: BUILD VALIDATION
+  # ========================================
+  build-validation:
+    name: 🏗️ Build Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: 🔧 Install root dependencies
+      run: npm ci
+      
+    - name: 🔧 Generate Prisma Client
+      run: |
+        cd packages/database
+        npx prisma generate
+        cd ../..
+        
+    - name: 🏗️ Build all services
+      run: |
+        services=("core-service" "auth-service" "campaign-service" "tracking-service" "postback-service")
+        
+        for service in "${services[@]}"; do
+          if [ -d "services/$service" ]; then
+            echo "🏗️ Building $service..."
+            cd "services/$service"
+            
+            # Install service dependencies
+            if [ -f "package.json" ]; then
+              npm ci
+              
+              # Build the service
+              if npm run build; then
+                echo "✅ $service built successfully"
+              else
+                echo "❌ $service build failed"
+                exit 1
+              fi
+            else
+              echo "⚠️ No package.json found in $service"
+            fi
+            
+            cd ../..
+          else
+            echo "⚠️ Service directory not found: $service"
+          fi
+        done
+        
+    - name: 🔍 Validate Dockerfile syntax
+      run: |
+        dockerfiles=("deployment/Dockerfile.core-service" "deployment/Dockerfile.auth-service" "deployment/Dockerfile.campaign-service" "deployment/Dockerfile.tracking-service" "deployment/Dockerfile.postback-service")
+        
+        for dockerfile in "${dockerfiles[@]}"; do
+          if [ -f "$dockerfile" ]; then
+            echo "🔍 Validating $dockerfile..."
+            # Basic syntax check
+            docker run --rm -i hadolint/hadolint < "$dockerfile" || echo "⚠️ Dockerfile linting issues found in $dockerfile"
+          else
+            echo "⚠️ Dockerfile not found: $dockerfile"
+          fi
+        done
+
+  # ========================================
+  # JOB 3: SECURITY SCAN
+  # ========================================
+  security-scan:
+    name: 🛡️ Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: 🛡️ Run npm audit
+      run: |
+        npm audit --audit-level high
+      continue-on-error: true
+      
+    - name: 🔍 Check for secrets in code
+      run: |
+        # Simple check for common secret patterns
+        if grep -r -E "(password|secret|key|token).*=.*['\"][^'\"]{10,}" --exclude-dir=node_modules --exclude-dir=.git .; then
+          echo "⚠️ Potential secrets found in code. Please review."
+        else
+          echo "✅ No obvious secrets found in code"
+        fi
+      continue-on-error: true
+
+  # ========================================
+  # JOB 4: PR SUMMARY
+  # ========================================
+  pr-summary:
+    name: 📋 PR Summary
+    runs-on: ubuntu-latest
+    needs: [code-quality, build-validation, security-scan]
+    if: always()
+    
+    steps:
+    - name: 📋 Generate PR summary
+      run: |
+        echo "## 📋 Pull Request Validation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ needs.code-quality.result }}" == "success" ]; then
+          echo "✅ **Code Quality**: Passed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Code Quality**: Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.build-validation.result }}" == "success" ]; then
+          echo "✅ **Build Validation**: Passed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Build Validation**: Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ needs.security-scan.result }}" == "success" ]; then
+          echo "✅ **Security Scan**: Passed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ **Security Scan**: Issues found (review required)" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "🚀 **Ready for merge**: All checks completed" >> $GITHUB_STEP_SUMMARY

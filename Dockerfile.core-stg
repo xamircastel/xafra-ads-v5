@@ -1,0 +1,40 @@
+# 🚀 Dockerfile simple para Core Service
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copiar archivos de configuración
+COPY package*.json ./
+COPY tsconfig*.json ./
+
+# Instalar TODAS las dependencias (incluyendo dev para TypeScript)
+RUN npm ci
+
+# Copiar código fuente
+COPY packages/ ./packages/
+COPY services/core-service/ ./services/core-service/
+COPY environments/staging/.env.staging .env
+
+# Compilar TypeScript en el workspace específico
+WORKDIR /app/services/core-service
+RUN npm ci && npm run build
+
+# Volver al directorio principal
+WORKDIR /app
+
+# Ahora instalar solo dependencias de producción
+RUN npm ci --only=production && npm cache clean --force
+
+# Generar Prisma client DESPUÉS de instalar dependencias de producción
+WORKDIR /app/services/core-service
+RUN npx prisma generate --schema=../../packages/database/prisma/schema.prisma
+
+# Exponer puerto
+EXPOSE 8080
+
+# Variables de ambiente
+ENV NODE_ENV=staging
+ENV PORT=8080
+
+# Comando de inicio
+CMD ["npm", "run", "start", "--workspace=core-service"]
