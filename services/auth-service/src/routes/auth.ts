@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { loggers } from '@xafra/shared/logger';
-import { cache } from '@xafra/shared/cache';
-import { prisma } from '@xafra/database';
+import { loggers } from '../utils/simple-logger';
+import { cache } from '../utils/simple-cache';
+import { prisma } from '../utils/simple-database';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();

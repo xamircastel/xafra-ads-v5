@@ -4,7 +4,7 @@
 interface CacheService {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, ttlSeconds?: number): Promise<void>;
-  del(key: string): Promise<void>;
+  del(key: string): Promise<boolean>;
   exists(key: string): Promise<boolean>;
   clear(): Promise<void>;
   connect(): Promise<void>;
@@ -31,8 +31,8 @@ class MemoryCache implements CacheService {
     this.cache.set(key, { value, expiry });
   }
 
-  async del(key: string): Promise<void> {
-    this.cache.delete(key);
+  async del(key: string): Promise<boolean> {
+    return this.cache.delete(key);
   }
 
   async exists(key: string): Promise<boolean> {

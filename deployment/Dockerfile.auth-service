@@ -51,4 +51,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 8080
 
 # Comando de inicio - regenerar Prisma y ejecutar con ruta correcta
-CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../shared && npm run build && cd ../database && npm run build && cd ../../ && node -r tsconfig-paths/register services/auth-service/dist/src/index.js"]
+CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../shared && npm run build && cd ../database && npm run build && cd ../../ && node services/auth-service/dist/index.js"]

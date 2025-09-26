@@ -45,8 +45,35 @@ class SimpleLogger {
     this.warn(`Security Event: ${event} from IP ${ip}`, context);
   }
 
-  auth(event: string, userId?: string | number, context?: LogContext) {
-    this.info(`Auth Event: ${event}${userId ? ` for user ${userId}` : ''}`, context);
+  auth(
+    event: string,
+    userIdOrContext?: string | number | LogContext,
+    customerIdOrContext?: string | number | LogContext,
+    context?: LogContext
+  ) {
+    let userId: string | number | undefined;
+    let customerId: string | number | undefined;
+    let finalContext: LogContext | undefined;
+
+    if (typeof userIdOrContext === 'object' && userIdOrContext !== null) {
+      finalContext = userIdOrContext as LogContext;
+    } else {
+      userId = userIdOrContext as string | number | undefined;
+
+      if (typeof customerIdOrContext === 'object' && customerIdOrContext !== null) {
+        finalContext = customerIdOrContext as LogContext;
+      } else {
+        customerId = customerIdOrContext as string | number | undefined;
+        finalContext = context;
+      }
+    }
+
+    const enrichedContext = {
+      ...finalContext,
+      ...(customerId !== undefined ? { customerId } : {})
+    };
+
+    this.info(`Auth Event: ${event}${userId ? ` for user ${userId}` : ''}`, enrichedContext);
   }
 
   apikey(event: string, keyId?: string, context?: LogContext) {
@@ -63,8 +90,8 @@ export const logger = new SimpleLogger('auth-service');
 
 // Export loggers object for compatibility
 export const loggers = {
-  auth: (event: string, userId?: string | number, context?: LogContext) => 
-    logger.auth(event, userId, context),
+  auth: (event: string, ...args: Array<string | number | LogContext>) => 
+    logger.auth(event, ...args),
   security: (event: string, ip: string, context?: LogContext) => 
     logger.security(event, ip, context),
   apikey: (event: string, keyId?: string, context?: LogContext) => 
