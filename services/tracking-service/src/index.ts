@@ -25,7 +25,7 @@ const app = express();
 const config = getConfig();
 
 // Override port for tracking-service
-config.service.port = parseInt(process.env.TRACKING_SERVICE_PORT || '8082', 10);
+config.service.port = parseInt(process.env.PORT || process.env.TRACKING_SERVICE_PORT || '8082', 10);
 
 // Trust proxy for accurate IP addresses in load balancer setup
 app.set('trust proxy', true);

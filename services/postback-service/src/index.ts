@@ -10,7 +10,7 @@ import postbackRoutes from './routes/postbacks.js';
 import healthRoutes from './routes/health.js';
 
 const app = express();
-const port = process.env.POSTBACK_SERVICE_PORT || 8084;
+const port = parseInt(process.env.PORT || process.env.POSTBACK_SERVICE_PORT || '8084', 10);
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));

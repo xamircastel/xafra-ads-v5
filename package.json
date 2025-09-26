@@ -45,6 +45,7 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "tsconfig-paths": "^4.2.0"
   }
 }

@@ -26,7 +26,7 @@ const app = express();
 const config = getConfig();
 
 // Override port for core-service (main service)
-config.service.port = parseInt(process.env.CORE_SERVICE_PORT || '8080', 10);
+config.service.port = parseInt(process.env.PORT || process.env.CORE_SERVICE_PORT || '8080', 10);
 
 // Trust proxy for accurate IP addresses in load balancer setup
 app.set('trust proxy', true);

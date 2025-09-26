@@ -23,8 +23,8 @@ import healthRoutes from './routes/health.js';
 const app = express();
 const config = getConfig();
 
-// Override port for auth-service
-config.service.port = parseInt(process.env.AUTH_SERVICE_PORT || '8081', 10);
+// Override port for auth-service - use PORT for Cloud Run compatibility
+config.service.port = parseInt(process.env.PORT || process.env.AUTH_SERVICE_PORT || '8081', 10);
 
 // Trust proxy for accurate IP addresses in load balancer setup
 app.set('trust proxy', true);

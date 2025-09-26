@@ -25,7 +25,7 @@ const app = express();
 const config = getConfig();
 
 // Override port for campaign-service
-config.service.port = parseInt(process.env.CAMPAIGN_SERVICE_PORT || '8083', 10);
+config.service.port = parseInt(process.env.PORT || process.env.CAMPAIGN_SERVICE_PORT || '8083', 10);
 
 // Trust proxy for accurate IP addresses in load balancer setup
 app.set('trust proxy', true);
