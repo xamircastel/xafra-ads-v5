@@ -26,8 +26,9 @@ RUN npx prisma generate
 WORKDIR /app/services/postback-service
 RUN npm ci
 
-# PASO 6: Compilar TypeScript (ahora Prisma Client ya existe)
-RUN npm run build
+# PASO 6: Compilar TypeScript desde root (workspace config)
+WORKDIR /app
+RUN npm run build --workspace=@xafra/postback-service
 
 # PASO 7: Verificar que Prisma Client está disponible
 RUN node -e "console.log('Testing Prisma Client...'); const { PrismaClient } = require('@prisma/client'); console.log('✅ Prisma Client available');"
