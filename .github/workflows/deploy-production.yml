@@ -135,32 +135,32 @@ jobs:
     - name: 🏗️ Deploy Core Service PROD
       run: |
         echo "🏗️ Deploying Core Service to Production..."
-        gcloud builds submit --config=cloudbuild-core-prod.yaml
+        gcloud builds submit --config=cloudbuild-core-prod.yaml --async
         
     - name: 🔐 Deploy Auth Service PROD
       run: |
         echo "🔐 Deploying Auth Service to Production..."
-        gcloud builds submit --config=cloudbuild-auth-prod.yaml
+        gcloud builds submit --config=cloudbuild-auth-prod.yaml --async
         
     - name: 📊 Deploy Campaign Service PROD
       run: |
         echo "📊 Deploying Campaign Service to Production..."
-        gcloud builds submit --config=cloudbuild-campaign-prod.yaml
+        gcloud builds submit --config=cloudbuild-campaign-prod.yaml --async
         
     - name: 📈 Deploy Tracking Service PROD
       run: |
         echo "📈 Deploying Tracking Service to Production..."
-        gcloud builds submit --config=cloudbuild-tracking-prod.yaml
+        gcloud builds submit --config=cloudbuild-tracking-prod.yaml --async
         
     - name: 📤 Deploy Postback Service PROD
       run: |
         echo "📤 Deploying Postback Service to Production..."
-        gcloud builds submit --config=cloudbuild-postback-prod.yaml
+        gcloud builds submit --config=cloudbuild-postback-prod.yaml --async
         
     - name: 🌐 Deploy Gateway PROD
       run: |
         echo "🌐 Deploying Gateway to Production..."
-        gcloud builds submit --config=cloudbuild-gateway-prod.yaml
+        gcloud builds submit --config=cloudbuild-gateway-prod.yaml --async
 
   # ========================================
   # JOB 3: PRODUCTION HEALTH CHECKS
@@ -171,8 +171,8 @@ jobs:
     needs: deploy-production
     
     steps:   
-    - name: ⏱️ Wait for production services to start
-      run: sleep 120  # More time for production
+    - name: ⏱️ Wait for async deployments to complete
+      run: sleep 300  # 5 minutes for async deployments to complete
       
     - name: 🔍 Check Core Service PROD
       run: |
