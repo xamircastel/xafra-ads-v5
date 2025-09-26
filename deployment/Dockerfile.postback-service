@@ -50,4 +50,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 8080
 
 # Comando de inicio - regenerar Prisma y ejecutar
-CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../../services/postback-service && node dist/services/postback-service/src/index.js"]
+CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../../services/postback-service && node dist/index.js"]

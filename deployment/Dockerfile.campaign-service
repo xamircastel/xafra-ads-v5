@@ -22,14 +22,6 @@ RUN npm ci
 WORKDIR /app/packages/database
 RUN npx prisma generate
 
-# PASO 4.5: Construir packages primero
-WORKDIR /app/packages/database
-RUN npm run build
-
-WORKDIR /app/packages/shared
-RUN npm run build
-
-# PASO 5: Cambiar a campaign-service e instalar sus dependencias
 WORKDIR /app/services/campaign-service
 RUN npm ci
 
@@ -57,4 +49,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 8080
 
 # Comando de inicio - regenerar Prisma y ejecutar
-CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../../services/campaign-service && node dist/services/campaign-service/src/index.js"]
+CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../../services/campaign-service && node dist/index.js"]
