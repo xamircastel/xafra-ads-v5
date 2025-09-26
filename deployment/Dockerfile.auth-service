@@ -15,8 +15,8 @@ COPY packages/ ./packages/
 COPY services/auth-service/ ./services/auth-service/
 COPY environments/ ./environments/
 
-# PASO 3: Instalar dependencias del ROOT workspace (incluye @prisma/client)
-RUN npm ci
+# PASO 3: Instalar dependencias del ROOT workspace (incluye @prisma/client y tsconfig-paths)
+RUN npm ci && npm install --save tsconfig-paths
 
 # PASO 4: Generar Prisma Client ANTES de hacer build
 WORKDIR /app/packages/database
@@ -28,7 +28,7 @@ RUN npm ci
 
 # PASO 6: Compilar TypeScript desde root (workspace config)
 WORKDIR /app
-RUN npm run build --workspace=auth-service
+RUN npm run build
 
 # PASO 7: Verificar que Prisma Client está disponible
 RUN node -e "console.log('Testing Prisma Client...'); const { PrismaClient } = require('@prisma/client'); console.log('✅ Prisma Client available');"
@@ -50,5 +50,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Exponer puerto
 EXPOSE 8080
 
-# Comando de inicio - regenerar Prisma y ejecutar
-CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../shared && npm run build && cd ../database && npm run build && cd ../../ && node -r tsconfig-paths/register services/auth-service/dist/services/auth-service/src/index.js"]
+# Comando de inicio - regenerar Prisma y ejecutar con ruta correcta
+CMD ["sh", "-c", "cd packages/database && npx prisma generate && cd ../shared && npm run build && cd ../database && npm run build && cd ../../ && node -r tsconfig-paths/register services/auth-service/dist/src/index.js"]
