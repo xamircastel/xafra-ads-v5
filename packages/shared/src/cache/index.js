@@ -3,11 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.cache = exports.getCacheService = exports.CacheService = void 0;
 const redis_1 = require("redis");
 class CacheService {
-    config;
-    client;
-    isConnected = false;
     constructor(config) {
         this.config = config;
+        this.isConnected = false;
         this.client = (0, redis_1.createClient)({
             url: config.url,
         });
@@ -97,7 +95,6 @@ class CacheService {
             return false;
         }
     }
-    // Specific cache methods for Xafra-ads
     async cacheProductDetails(productId, details, ttl = 3600) {
         return this.set(`product:${productId}`, details, ttl);
     }
@@ -116,7 +113,6 @@ class CacheService {
     async getConversionRate(productId) {
         return this.get(`conversion:${productId}`);
     }
-    // Rate limiting helpers
     async rateLimitCheck(identifier, limit, window) {
         const key = `ratelimit:${identifier}`;
         const current = await this.increment(key);
@@ -130,13 +126,12 @@ class CacheService {
     }
 }
 exports.CacheService = CacheService;
-// Singleton instance
 let cacheService;
 const getCacheService = () => {
     if (!cacheService) {
         const config = {
             url: process.env.REDIS_URL || 'redis://localhost:6379',
-            defaultTTL: 3600, // 1 hour
+            defaultTTL: 3600,
             keyPrefix: 'xafra'
         };
         cacheService = new CacheService(config);
@@ -144,6 +139,5 @@ const getCacheService = () => {
     return cacheService;
 };
 exports.getCacheService = getCacheService;
-// Export a default cache instance for easy access
 exports.cache = (0, exports.getCacheService)();
 //# sourceMappingURL=index.js.map

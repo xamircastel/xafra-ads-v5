@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.loggers = exports.performanceLogger = exports.logger = void 0;
 const winston_1 = __importDefault(require("winston"));
-// Define log levels
 const levels = {
     error: 0,
     warn: 1,
@@ -21,27 +20,21 @@ const colors = {
     debug: 'white',
 };
 winston_1.default.addColors(colors);
-// Define format for logs
 const format = winston_1.default.format.combine(winston_1.default.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss:ms' }), winston_1.default.format.colorize({ all: true }), winston_1.default.format.printf((info) => `${info.timestamp} ${info.level}: ${info.message}`));
-// Define transports
 const transports = [
-    // Console transport
     new winston_1.default.transports.Console({
         format: winston_1.default.format.combine(winston_1.default.format.colorize(), winston_1.default.format.simple())
     }),
-    // File transport for errors
     new winston_1.default.transports.File({
         filename: 'logs/error.log',
         level: 'error',
         format: winston_1.default.format.combine(winston_1.default.format.timestamp(), winston_1.default.format.json())
     }),
-    // File transport for all logs
     new winston_1.default.transports.File({
         filename: 'logs/combined.log',
         format: winston_1.default.format.combine(winston_1.default.format.timestamp(), winston_1.default.format.json())
     }),
 ];
-// Create logger instance
 exports.logger = winston_1.default.createLogger({
     level: process.env.LOG_LEVEL || 'info',
     levels,
@@ -52,7 +45,6 @@ exports.logger = winston_1.default.createLogger({
     },
     transports,
 });
-// Performance tracking
 exports.performanceLogger = {
     track: (operation, startTime, metadata) => {
         const duration = Date.now() - startTime;
@@ -61,7 +53,6 @@ exports.performanceLogger = {
             duration,
             ...metadata
         });
-        // Alert if operation takes too long (especially for ads redirects)
         if (operation.includes('redirect') && duration > 50) {
             exports.logger.warn(`Slow redirect detected: ${duration}ms`, {
                 operation,
@@ -72,7 +63,6 @@ exports.performanceLogger = {
         return duration;
     }
 };
-// Structured logging helpers
 exports.loggers = {
     request: (method, url, statusCode, duration, metadata) => {
         exports.logger.info('HTTP Request', {
