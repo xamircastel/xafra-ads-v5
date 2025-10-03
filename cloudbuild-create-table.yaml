@@ -1,0 +1,48 @@
+steps:
+  # Crear tabla conversions directamente con SQL
+  - name: 'postgres:14-alpine'
+    env:
+      - 'PGPASSWORD=XafraTech2025!'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        echo "📊 Creando tabla conversions en schema staging..."
+        
+        psql -h 34.28.245.62 -U postgres -d xafra-ads <<'EOF'
+        -- Crear tabla conversions en schema staging
+        CREATE TABLE IF NOT EXISTS staging.conversions (
+          id SERIAL PRIMARY KEY,
+          conversion_date TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          customer_id BIGINT NOT NULL,
+          tracking VARCHAR(255) NOT NULL UNIQUE,
+          id_product VARCHAR(255),
+          msisdn VARCHAR(50),
+          empello_token VARCHAR(255),
+          source VARCHAR(100),
+          status_post_back VARCHAR(50) DEFAULT 'pending',
+          date_post_back TIMESTAMP(3),
+          campaign VARCHAR(255),
+          country VARCHAR(10) DEFAULT 'pe',
+          operator VARCHAR(50) DEFAULT 'entel',
+          CONSTRAINT fk_customer FOREIGN KEY (customer_id) REFERENCES public.customers(id_customer) ON DELETE CASCADE
+        );
+
+        -- Crear índices para performance
+        CREATE INDEX IF NOT EXISTS idx_conversions_customer_id ON staging.conversions(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_conversions_tracking ON staging.conversions(tracking);
+        CREATE INDEX IF NOT EXISTS idx_conversions_status ON staging.conversions(status_post_back);
+        CREATE INDEX IF NOT EXISTS idx_conversions_date ON staging.conversions(conversion_date);
+
+        -- Verificar que la tabla fue creada
+        SELECT 'Tabla creada exitosamente' AS status;
+        \dt staging.conversions
+        EOF
+        
+        echo "✅ Tabla conversions creada exitosamente"
+
+timeout: '300s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'

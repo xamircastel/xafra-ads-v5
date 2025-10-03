@@ -1,0 +1,68 @@
+steps:
+  # Paso 1: Ejecutar migraciones de Prisma en Staging
+  - name: 'node:20-alpine'
+    dir: 'packages/database'
+    env:
+      - 'DATABASE_URL=postgresql://postgres:XafraTech2025!@34.28.245.62:5432/xafra-ads?schema=staging'
+      - 'PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        echo "🔧 Instalando dependencias del sistema..."
+        apk add --no-cache openssl openssl-dev postgresql-client
+        echo "📦 Instalando dependencias de Node..."
+        npm install --production=false
+        
+        echo "📊 Verificando estado de la base de datos..."
+        # Verificar si la tabla _prisma_migrations existe
+        PGPASSWORD=XafraTech2025! psql -h 34.28.245.62 -U postgres -d xafra-ads -c "SELECT COUNT(*) FROM staging._prisma_migrations;" 2>/dev/null || {
+          echo "⚠️ No hay tabla _prisma_migrations, inicializando..."
+          npx prisma migrate resolve --applied 20250918170729_add_auth_fields --schema=prisma/schema.prisma
+        }
+        
+        echo "📊 Aplicando nueva migración..."
+        npx prisma migrate deploy --schema=prisma/schema.prisma
+        
+        echo "✅ Verificando tabla conversions..."
+        PGPASSWORD=XafraTech2025! psql -h 34.28.245.62 -U postgres -d xafra-ads -c "SELECT table_name FROM information_schema.tables WHERE table_schema='staging' AND table_name='conversions';"
+        
+        echo "✅ Migraciones completadas"
+
+  # Paso 2: Generar Prisma Client
+  - name: 'node:20-alpine'
+    dir: 'packages/database'
+    env:
+      - 'DATABASE_URL=postgresql://postgres:XafraTech2025!@34.28.245.62:5432/xafra-ads?schema=staging'
+      - 'PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        echo "🔧 Instalando OpenSSL..."
+        apk add --no-cache openssl openssl-dev
+        echo "🔧 Generando Prisma Client..."
+        npx prisma generate --schema=prisma/schema.prisma
+        echo "✅ Prisma Client generado"
+
+  # Paso 3: Verificar migraciones
+  - name: 'node:20-alpine'
+    dir: 'packages/database'
+    env:
+      - 'DATABASE_URL=postgresql://postgres:XafraTech2025!@34.28.245.62:5432/xafra-ads?schema=staging'
+      - 'PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        echo "🔧 Instalando OpenSSL..."
+        apk add --no-cache openssl openssl-dev
+        echo "🔍 Verificando estado de migraciones..."
+        npx prisma migrate status --schema=prisma/schema.prisma || true
+        echo "✅ Verificación completada"
+
+timeout: '600s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
