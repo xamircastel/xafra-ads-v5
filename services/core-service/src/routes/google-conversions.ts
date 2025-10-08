@@ -15,33 +15,36 @@ const serializeWithBigInt = (obj: any): string => {
 
 // Validation helper
 interface ConversionBody {
-  msisdn?: string;           // Opcional - Teléfono del cliente
-  empello_token?: string;    // Opcional - Token alfanumérico de Empello
-  id_product?: string;       // Opcional - ID del producto (cambiado a string)
-  campaign?: string;         // Opcional - Nombre de la campaña
+  msisdn?: string;           // Opcional - Teléfono del cliente (máx. 20 caracteres)
+  empello_token?: string;    // Opcional - Token alfanumérico de Empello (máx. 300 caracteres)
+  id_product?: string;       // Opcional - ID del producto (debe existir en staging.product)
+  campaign?: string;         // Opcional - Nombre de la campaña (máx. 20 caracteres)
 }
 
 /**
  * Google Ads Conversion Endpoint for ENTEL Peru
- * POST /service/v1/google/conversion/{apikey}/{tracking}
+ * POST /service/v1/{source}/conversion/{apikey}/{tracking}
  * 
+ * @param source - Conversion source (google, facebook, tiktok, etc.) (URL - Obligatorio)
  * @param apikey - Customer API key for authentication (URL - Obligatorio)
  * @param tracking - Unique tracking ID (URL - Obligatorio)
  * @body (optional) - Additional conversion data:
- *   - msisdn: Phone number (opcional)
- *   - id_product: Product ID (opcional)
- *   - empello_token: Empello token string (opcional)
- *   - campaign: Campaign name (opcional)
+ *   - msisdn: Phone number (opcional, máx. 20 caracteres)
+ *   - id_product: Product ID (opcional, debe existir en staging.product)
+ *   - empello_token: Empello token string (opcional, máx. 300 caracteres)
+ *   - campaign: Campaign name (opcional, máx. 20 caracteres)
  * 
+ * @updated 2025-10-08T16:00:00Z - Added source parameter extraction from path
  * @updated 2025-10-02T20:25:00Z - Changed from GET to POST, route corrected
  */
-router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Response) => {
+router.post('/:source/conversion/:apikey/:tracking', async (req: Request, res: Response) => {
   const startTime = Date.now();
-  const { apikey, tracking } = req.params;
+  const { source, apikey, tracking } = req.params;
   
   try {
     // Log incoming request
-    loggers.tracking('google_conversion_received', tracking, 0, {
+    loggers.tracking('conversion_received', tracking, 0, {
+      source,
       apikey: apikey.substring(0, 8) + '...',
       tracking,
       ip: req.ip,
@@ -49,7 +52,17 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
       hasBody: !!req.body && Object.keys(req.body).length > 0
     });
 
-    // 1. Validate tracking parameter - solo verificar que no esté vacío
+    // 1. Validate source parameter
+    if (!source || source.trim().length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'Source parameter is required',
+        code: 'MISSING_SOURCE'
+      });
+      return;
+    }
+
+    // 1.1 Validate tracking parameter - solo verificar que no esté vacío
     if (!tracking || tracking.trim().length === 0) {
       res.status(400).json({
         success: false,
@@ -117,19 +130,19 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
     const bodyData: ConversionBody = req.body || {};
     
     // Basic validation for optional fields
-    if (bodyData.msisdn && (typeof bodyData.msisdn !== 'string' || bodyData.msisdn.length > 50)) {
+    if (bodyData.msisdn && (typeof bodyData.msisdn !== 'string' || bodyData.msisdn.length > 20)) {
       res.status(400).json({
         success: false,
-        error: 'Invalid msisdn format (max 50 characters)',
+        error: 'Invalid msisdn format (max 20 characters)',
         code: 'INVALID_BODY'
       });
       return;
     }
 
-    if (bodyData.empello_token && (typeof bodyData.empello_token !== 'string' || bodyData.empello_token.length > 255)) {
+    if (bodyData.empello_token && (typeof bodyData.empello_token !== 'string' || bodyData.empello_token.length > 300)) {
       res.status(400).json({
         success: false,
-        error: 'Invalid empello_token format (max 255 characters)',
+        error: 'Invalid empello_token format (max 300 characters)',
         code: 'INVALID_BODY'
       });
       return;
@@ -144,27 +157,74 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
       return;
     }
 
-    if (bodyData.campaign && (typeof bodyData.campaign !== 'string' || bodyData.campaign.length > 255)) {
+    // 3.1. Validate id_product exists in staging.product table
+    // TEMPORARILY DISABLED - Prisma Client issue with Product model
+    /*
+    if (bodyData.id_product) {
+      const productExists = await prisma.product.findFirst({
+        where: {
+          id_product: BigInt(bodyData.id_product),
+          active: 1  // Solo productos activos
+        }
+      });
+
+      if (!productExists) {
+        logger.warn('Invalid product ID provided', {
+          id_product: bodyData.id_product,
+          tracking,
+          customerId: Number(customer.id_customer)
+        });
+
+        res.status(400).json({
+          success: false,
+          error: `Product with id_product '${bodyData.id_product}' does not exist or is inactive`,
+          code: 'INVALID_PRODUCT'
+        });
+        return;
+      }
+
+      logger.info('Product validated successfully', {
+        id_product: bodyData.id_product,
+        productName: productExists.name,
+        tracking
+      });
+    }
+    */
+
+    if (bodyData.campaign && (typeof bodyData.campaign !== 'string' || bodyData.campaign.length > 20)) {
       res.status(400).json({
         success: false,
-        error: 'Invalid campaign format (max 255 characters)',
+        error: 'Invalid campaign format (max 20 characters)',
         code: 'INVALID_BODY'
       });
       return;
     }
 
+    logger.info('[DEBUG] All validations passed, proceeding to check duplicate', {
+      tracking,
+      customerId: Number(customer.id_customer),
+      hasBodyData: Object.keys(bodyData).length > 0
+    });
+
     // 3.5. Limpiar tracking ANTES de cualquier operación de base de datos
     const cleanTracking = tracking.trim().replace(/\0/g, '');
 
     // 4. Check for duplicate conversion (same tracking + customer)
-    const existingConversion = await prisma.conversion.findFirst({
-      where: {
-        tracking: cleanTracking,  // Usar tracking limpio
-        customer_id: customer.id_customer
-      }
-    });
+    type ExistingConversionRow = {
+      id: bigint | number;
+      conversion_date: Date;
+    };
+    
+    const existingConversions = await prisma.$queryRaw<ExistingConversionRow[]>`
+      SELECT id, conversion_date
+      FROM "staging"."conversions"
+      WHERE tracking = ${cleanTracking}
+        AND customer_id = ${customer.id_customer}
+      LIMIT 1
+    `;
 
-    if (existingConversion) {
+    if (existingConversions && existingConversions.length > 0) {
+      const existingConversion = existingConversions[0];
       logger.warn('Duplicate Google conversion attempt', {
         tracking,
         customerId: Number(customer.id_customer),
@@ -183,10 +243,16 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
       return;
     }
 
+    logger.info('[DEBUG] No duplicate found, proceeding to create conversion', {
+      tracking: cleanTracking.substring(0, 20),
+      customerId: Number(customer.id_customer)
+    });
+
     // 5. Create conversion record
     // Limpiar campos de customer para evitar bytes nulos (0x00)
     const cleanCountry = (customer.country || 'pe').trim().replace(/\0/g, '');
     const cleanOperator = (customer.operator || 'entel').trim().replace(/\0/g, '');
+    const cleanSource = source.trim().replace(/\0/g, '').toLowerCase(); // Limpiar y normalizar source
     // cleanTracking ya fue definido arriba antes del findFirst
     
     // Preparar datos limpios
@@ -197,7 +263,7 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
       msisdn: bodyData.msisdn ? bodyData.msisdn.trim().replace(/\0/g, '') : null,
       empello_token: bodyData.empello_token ? bodyData.empello_token.trim().replace(/\0/g, '') : null,
       campaign: bodyData.campaign ? bodyData.campaign.trim().replace(/\0/g, '') : null,
-      source: 'google',
+      source: cleanSource,  // Usar source del path en lugar de hardcoded 'google'
       country: cleanCountry,
       operator: cleanOperator,
       status_post_back: 0,
@@ -236,6 +302,12 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
     logger.info('Creating conversion with cleaned data', logPreview);
     logger.info('Conversion string diagnostics', stringDiagnostics);
 
+    logger.info('[DEBUG] About to execute INSERT query', {
+      tracking: cleanTracking.substring(0, 20),
+      customerId: conversionData.customer_id.toString(),
+      source: cleanSource
+    });
+
     type ConversionRow = {
       id: bigint | number | string;
       conversion_date: Date;
@@ -265,6 +337,11 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
       throw new Error('Conversion insert did not return any rows');
     }
 
+    logger.info('[DEBUG] INSERT successful', {
+      rowsReturned: insertedRows.length,
+      firstRowId: insertedRows[0].id?.toString() || 'unknown'
+    });
+
     const conversionRow = insertedRows[0];
 
     const conversion = {
@@ -293,11 +370,12 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
     };
 
     // Log successful creation
-    loggers.tracking('google_conversion_created', tracking, 0, {
+    loggers.tracking('conversion_created', tracking, 0, {
       conversionId: Number(conversion.id),
       customerId: Number(customer.id_customer),
       customerName: customer.name,
       tracking,
+      source: cleanSource,
       idProduct: bodyData.id_product || 'N/A',
       msisdn: bodyData.msisdn || 'N/A',
       campaign: bodyData.campaign || 'N/A',
@@ -345,7 +423,8 @@ router.post('/google/conversion/:apikey/:tracking', async (req: Request, res: Re
   } catch (error) {
     const responseTime = Date.now() - startTime;
     
-    loggers.error('Google conversion registration failed', error, {
+    loggers.error('Conversion registration failed', error, {
+      source: source || 'unknown',
       apikey: apikey?.substring(0, 8) + '...',
       tracking,
       ip: req.ip,

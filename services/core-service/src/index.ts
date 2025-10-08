@@ -21,6 +21,7 @@ import confirmRoutes from './routes/confirm';
 import configRoutes from './routes/config';
 import utilRoutes from './routes/util';
 import healthRoutes from './routes/health';
+import conversionRoutes from './routes/google-conversions';
 
 const app = express();
 const config = getConfig();
@@ -78,6 +79,7 @@ app.use('/ads', adsRoutes);           // High-performance tracking URLs
 app.use('/api/confirm', confirmRoutes);   // Sale confirmation endpoints
 app.use('/api/config', configRoutes); // Configuration endpoints (Kolbi)
 app.use('/api/util', utilRoutes);     // Utility endpoints (encrypt/decrypt)
+app.use('/service/v1', conversionRoutes); // Conversion tracking endpoints (Google Ads, etc.)
 
 // Global error handling
 app.use(notFoundHandler);
