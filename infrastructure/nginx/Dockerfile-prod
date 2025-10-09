@@ -5,7 +5,7 @@ FROM nginx:1.25-alpine
 RUN apk add --no-cache curl
 
 # Copy configurations
-COPY infrastructure/nginx/nginx-gateway.conf /etc/nginx/nginx.conf
+COPY infrastructure/nginx/nginx-gateway-prod.conf /etc/nginx/nginx.conf
 COPY infrastructure/nginx/conf.d/gateway-routes-prod.conf /etc/nginx/conf.d/gateway-routes.conf
 
 # Create basic health check
