@@ -327,11 +327,14 @@ router.post('/:source/conversion/:apikey/:tracking', async (req: Request, res: R
       operator: string | null;
     };
 
+    // Convert BigInt to string for INSERT query
+    const customerIdStrForInsert = conversionData.customer_id.toString();
+
     const insertedRows = await prisma.$queryRaw<ConversionRow[]>`
       INSERT INTO "staging"."conversions"
       ("customer_id", "tracking", "id_product", "msisdn", "empello_token", "source", "status_post_back", "date_post_back", "campaign", "country", "operator")
       VALUES
-      (${conversionData.customer_id}, ${conversionData.tracking}, ${conversionData.id_product}, ${conversionData.msisdn}, ${conversionData.empello_token}, ${conversionData.source}, ${conversionData.status_post_back}, ${conversionData.date_post_back}, ${conversionData.campaign}, ${conversionData.country}, ${conversionData.operator})
+      (${customerIdStrForInsert}::bigint, ${conversionData.tracking}, ${conversionData.id_product}, ${conversionData.msisdn}, ${conversionData.empello_token}, ${conversionData.source}, ${conversionData.status_post_back}, ${conversionData.date_post_back}, ${conversionData.campaign}, ${conversionData.country}, ${conversionData.operator})
       RETURNING
       "id", "conversion_date", "customer_id", "tracking", "id_product", "msisdn", "empello_token", "source", "status_post_back", "date_post_back", "campaign", "country", "operator";
     `;
