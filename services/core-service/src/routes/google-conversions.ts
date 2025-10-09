@@ -223,13 +223,15 @@ router.post('/:source/conversion/:apikey/:tracking', async (req: Request, res: R
     // Convert BigInt to string for PostgreSQL comparison
     const customerIdStr = customer.id_customer.toString();
     
-    const existingConversions = await prisma.$queryRaw<ExistingConversionRow[]>`
-      SELECT id, conversion_date
-      FROM "${DB_SCHEMA}"."conversions"
-      WHERE tracking = ${cleanTracking}
-        AND customer_id = ${customerIdStr}::bigint
-      LIMIT 1
-    `;
+    const existingConversions = await prisma.$queryRawUnsafe(
+      `SELECT id, conversion_date
+       FROM "${DB_SCHEMA}"."conversions"
+       WHERE tracking = $1
+         AND customer_id = $2::bigint
+       LIMIT 1`,
+      cleanTracking,
+      customerIdStr
+    ) as ExistingConversionRow[];
 
     if (existingConversions && existingConversions.length > 0) {
       const existingConversion = existingConversions[0];
@@ -335,14 +337,25 @@ router.post('/:source/conversion/:apikey/:tracking', async (req: Request, res: R
     // Convert BigInt to string for INSERT query
     const customerIdStrForInsert = conversionData.customer_id.toString();
 
-    const insertedRows = await prisma.$queryRaw<ConversionRow[]>`
-      INSERT INTO "${DB_SCHEMA}"."conversions"
-      ("customer_id", "tracking", "id_product", "msisdn", "empello_token", "source", "status_post_back", "date_post_back", "campaign", "country", "operator")
-      VALUES
-      (${customerIdStrForInsert}::bigint, ${conversionData.tracking}, ${conversionData.id_product}, ${conversionData.msisdn}, ${conversionData.empello_token}, ${conversionData.source}, ${conversionData.status_post_back}, ${conversionData.date_post_back}, ${conversionData.campaign}, ${conversionData.country}, ${conversionData.operator})
-      RETURNING
-      "id", "conversion_date", "customer_id", "tracking", "id_product", "msisdn", "empello_token", "source", "status_post_back", "date_post_back", "campaign", "country", "operator";
-    `;
+    const insertedRows = await prisma.$queryRawUnsafe(
+      `INSERT INTO "${DB_SCHEMA}"."conversions"
+       ("customer_id", "tracking", "id_product", "msisdn", "empello_token", "source", "status_post_back", "date_post_back", "campaign", "country", "operator")
+       VALUES
+       ($1::bigint, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING
+       "id", "conversion_date", "customer_id", "tracking", "id_product", "msisdn", "empello_token", "source", "status_post_back", "date_post_back", "campaign", "country", "operator"`,
+      customerIdStrForInsert,
+      conversionData.tracking,
+      conversionData.id_product,
+      conversionData.msisdn,
+      conversionData.empello_token,
+      conversionData.source,
+      conversionData.status_post_back,
+      conversionData.date_post_back,
+      conversionData.campaign,
+      conversionData.country,
+      conversionData.operator
+    ) as ConversionRow[];
 
     if (!Array.isArray(insertedRows) || insertedRows.length === 0) {
       throw new Error('Conversion insert did not return any rows');
