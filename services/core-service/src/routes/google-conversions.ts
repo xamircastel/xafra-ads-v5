@@ -215,11 +215,14 @@ router.post('/:source/conversion/:apikey/:tracking', async (req: Request, res: R
       conversion_date: Date;
     };
     
+    // Convert BigInt to string for PostgreSQL comparison
+    const customerIdStr = customer.id_customer.toString();
+    
     const existingConversions = await prisma.$queryRaw<ExistingConversionRow[]>`
       SELECT id, conversion_date
       FROM "staging"."conversions"
       WHERE tracking = ${cleanTracking}
-        AND customer_id = ${customer.id_customer}
+        AND customer_id = ${customerIdStr}::bigint
       LIMIT 1
     `;
 
