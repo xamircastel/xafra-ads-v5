@@ -6,6 +6,11 @@ import { getCacheService } from '../utils/simple-cache';
 const router = Router();
 const cache = getCacheService();
 
+// Determinar el schema de base de datos según el entorno
+const DB_SCHEMA = process.env.NODE_ENV === 'production' ? 'production' : 'staging';
+
+logger.info(`[google-conversions] Using database schema: ${DB_SCHEMA}`);
+
 // Helper para serializar objetos con BigInt a JSON
 const serializeWithBigInt = (obj: any): string => {
   return JSON.stringify(obj, (key, value) =>
@@ -220,7 +225,7 @@ router.post('/:source/conversion/:apikey/:tracking', async (req: Request, res: R
     
     const existingConversions = await prisma.$queryRaw<ExistingConversionRow[]>`
       SELECT id, conversion_date
-      FROM "staging"."conversions"
+      FROM "${DB_SCHEMA}"."conversions"
       WHERE tracking = ${cleanTracking}
         AND customer_id = ${customerIdStr}::bigint
       LIMIT 1
@@ -331,7 +336,7 @@ router.post('/:source/conversion/:apikey/:tracking', async (req: Request, res: R
     const customerIdStrForInsert = conversionData.customer_id.toString();
 
     const insertedRows = await prisma.$queryRaw<ConversionRow[]>`
-      INSERT INTO "staging"."conversions"
+      INSERT INTO "${DB_SCHEMA}"."conversions"
       ("customer_id", "tracking", "id_product", "msisdn", "empello_token", "source", "status_post_back", "date_post_back", "campaign", "country", "operator")
       VALUES
       (${customerIdStrForInsert}::bigint, ${conversionData.tracking}, ${conversionData.id_product}, ${conversionData.msisdn}, ${conversionData.empello_token}, ${conversionData.source}, ${conversionData.status_post_back}, ${conversionData.date_post_back}, ${conversionData.campaign}, ${conversionData.country}, ${conversionData.operator})
